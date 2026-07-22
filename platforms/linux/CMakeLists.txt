@@ -218,6 +218,13 @@ install(
   DESTINATION "${FCITX_INSTALL_PKGDATADIR}/inputmethod"
 )
 
+# Icons (hicolor theme) → ${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/...
+include(GNUInstallDirs)
+install(
+  DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/icons/hicolor"
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/icons"
+)
+
 message(STATUS "Dấu Fcitx5 addon")
 message(STATUS "  DAU_ROOT          = ${DAU_ROOT}")
 message(STATUS "  DAU_CORE_LIB      = ${DAU_CORE_LIB}")
