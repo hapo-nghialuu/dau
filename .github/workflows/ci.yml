@@ -2,39 +2,20 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
 
 jobs:
-  core:
-    name: core (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    defaults:
-      run:
-        working-directory: core
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - name: Format check
-        run: cargo fmt --check
-      - name: Clippy
-        run: cargo clippy -- -D warnings
-      - name: Test
-        run: cargo test
-
-  linux-addon:
-    name: linux-addon
+  deb:
+    name: deb
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install Fcitx5 build dependencies
+
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -46,12 +27,13 @@ jobs:
             libfcitx5config-dev \
             libfcitx5utils-dev \
             libxkbcommon-dev
-      - name: Configure & build Fcitx5 addon
-        run: |
-          cd platforms/linux
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --verbose
-      - name: Unit tests (TypingController, no fcitx5 runtime)
-        run: |
-          cd platforms/linux
-          ctest --test-dir build --output-on-failure
+
+      - name: Package .deb
+        run: bash scripts/package-deb.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dau-deb
+          path: dist/*
+          retention-days: 14

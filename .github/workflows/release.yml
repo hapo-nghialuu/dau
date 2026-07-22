@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            pkg-config \
+            extra-cmake-modules \
+            fcitx5 \
+            libfcitx5core-dev \
+            libfcitx5config-dev \
+            libfcitx5utils-dev \
+            libxkbcommon-dev
+
+      - name: Guard version matches Cargo.toml
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          BASE="${TAG%%-*}"
+          CARGO_VERSION="$(grep -E '^version\s*=' core/Cargo.toml | head -1 | sed -E 's/^version\s*=\s*"([^"]+)".*/\1/')"
+          if [[ "$BASE" != "$CARGO_VERSION" ]]; then
+            echo "error: tag base version '${BASE}' does not match core/Cargo.toml version '${CARGO_VERSION}'" >&2
+            echo "       GITHUB_REF_NAME=${GITHUB_REF_NAME} TAG=${TAG}" >&2
+            exit 1
+          fi
+          echo "version ok: tag=${GITHUB_REF_NAME} base=${BASE} cargo=${CARGO_VERSION}"
+
+      - name: Package .deb
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          bash scripts/package-deb.sh --version "$TAG"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            EXTRA+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            dist/*.deb \
+            dist/*.tar.gz \
+            dist/SHA256SUMS \
+            --title "Dấu $GITHUB_REF_NAME" \
+            --generate-notes \
+            "${EXTRA[@]}"
