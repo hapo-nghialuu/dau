@@ -15,3 +15,6 @@ plans/
 platforms/linux/build/
 *.so
 *.dylib
+/demo/target/
+/demo/web/dau_demo.wasm
+/demo/macos/DauDemo.app/

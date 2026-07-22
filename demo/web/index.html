@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dấu — Demo bộ gõ tiếng Việt</title>
+<style>
+  :root {
+    --red: #DA251D; --red2: #E8342A; --orange: #F4791F;
+    --ink: #1d1f23; --muted: #6b7280; --line: #e5e7eb; --bg: #f6f7f9;
+    --card: #ffffff; --preedit: #b45309;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+    color: var(--ink); background: var(--bg); line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 40px 20px 80px; }
+  header { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+  header img { width: 64px; height: 64px; border-radius: 15px; box-shadow: 0 4px 16px rgba(218,37,29,.25); }
+  h1 { font-size: 30px; margin: 0; letter-spacing: -0.5px; }
+  .tag { color: var(--muted); font-size: 15px; margin: 2px 0 0; }
+  .badge { display:inline-block; font-size:12px; font-weight:600; color:#fff;
+    background:linear-gradient(135deg,var(--red2),var(--orange)); padding:2px 9px; border-radius:999px; margin-left:8px; vertical-align:middle; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px; margin-top: 22px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 16px; }
+  .row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: 0; }
+  .row .label { font-weight: 500; }
+  .row .hint { color: var(--muted); font-size: 13px; font-weight: 400; }
+  .seg { display: inline-flex; background: var(--bg); border-radius: 10px; padding: 3px; }
+  .seg button { border: 0; background: transparent; padding: 6px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--muted); cursor: pointer; }
+  .seg button.on { background: #fff; color: var(--red); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  /* toggle */
+  .sw { position: relative; width: 46px; height: 27px; }
+  .sw input { display: none; }
+  .sw span { position:absolute; inset:0; background:#cbd0d8; border-radius:999px; transition:.15s; }
+  .sw span::after { content:""; position:absolute; width:21px; height:21px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.15s; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+  .sw input:checked + span { background: linear-gradient(135deg,var(--red2),var(--orange)); }
+  .sw input:checked + span::after { transform: translateX(19px); }
+  /* typing screen */
+  .screen { min-height: 160px; background: #0f1115; border-radius: 14px; padding: 20px 22px; color: #e6e6e6;
+    font-family: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace; font-size: 18px; line-height: 1.7;
+    white-space: pre-wrap; word-break: break-word; cursor: text; outline: none; caret-color: transparent; }
+  .screen:focus { box-shadow: 0 0 0 3px rgba(244,121,31,.35); }
+  .preedit { text-decoration: underline; text-decoration-color: var(--orange); text-underline-offset: 3px; color: #fff; }
+  .cursor { display:inline-block; width:2px; height:1.05em; background:var(--orange); vertical-align:text-bottom; margin-left:1px; animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .placeholder { color: #5b616e; }
+  .hintbar { margin-top: 12px; font-size: 13px; color: var(--muted); display:flex; gap:16px; flex-wrap:wrap; }
+  .hintbar kbd { background:#eceef1; border:1px solid #d5d9df; border-bottom-width:2px; border-radius:6px; padding:1px 7px; font-family:inherit; font-size:12px; }
+  .examples { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+  .examples button { border:1px solid var(--line); background:#fff; border-radius:999px; padding:6px 13px; font-size:13px; cursor:pointer; color:var(--ink); }
+  .examples button:hover { border-color: var(--orange); color: var(--red); }
+  footer { text-align:center; color:var(--muted); font-size:13px; margin-top:34px; }
+  footer a { color: var(--red); text-decoration: none; }
+  .note { background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; font-size:13px; padding:10px 14px; border-radius:10px; margin-top:18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="logo.svg" alt="Dấu">
+    <div>
+      <h1>Dấu <span class="badge">demo · v0.1.0</span></h1>
+      <p class="tag">Bộ gõ tiếng Việt — engine Rust chạy ngay trong trình duyệt (WASM)</p>
+    </div>
+  </header>
+
+  <div class="note">
+    Đây là <b>engine thật</b> của Dấu (cùng core dùng cho addon Fcitx5 trên Linux), biên dịch ra WASM để bạn thử trên macOS.
+    UI này mô phỏng bảng cấu hình + cách hiển thị preedit (gạch chân) của bộ gõ.
+  </div>
+
+  <div class="card">
+    <h2>Cấu hình (giống fcitx5-configtool)</h2>
+    <div class="row">
+      <div><div class="label">Kiểu gõ</div><div class="hint">Telex hoặc VNI</div></div>
+      <div class="seg" id="method">
+        <button data-vni="0" class="on">Telex</button>
+        <button data-vni="1">VNI</button>
+      </div>
+    </div>
+    <div class="row">
+      <div><div class="label">Tự viết hoa đầu câu</div><div class="hint">Tắt mặc định (an toàn cho terminal)</div></div>
+      <label class="sw"><input type="checkbox" id="autocap"><span></span></label>
+    </div>
+    <div class="row">
+      <div><div class="label">Tự phục hồi tiếng Anh</div><div class="hint">Gõ "text", "with" → giữ nguyên khi Space</div></div>
+      <label class="sw"><input type="checkbox" id="autorestore" checked><span></span></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Gõ thử</h2>
+    <div class="screen" id="screen" tabindex="0"><span class="placeholder" id="ph">Nhấp vào đây rồi gõ… ví dụ: tieengs, Vieejt Nam, hoaf</span><span id="out"></span><span class="preedit" id="pre"></span><span class="cursor" id="cur" style="display:none"></span></div>
+    <div class="examples" id="ex">
+      <button data-k="tieengs ">tieengs → tiếng</button>
+      <button data-k="Vieejt Nam ">Việt Nam</button>
+      <button data-k="hoaf khoer thuyr ">hoà khoẻ thuỷ</button>
+      <button data-k="nguoiwf ">người</button>
+      <button data-k="the quick brown fox ">tiếng Anh (auto-restore)</button>
+    </div>
+    <div class="hintbar">
+      <span><kbd>Space</kbd> / <kbd>.</kbd> commit từ</span>
+      <span><kbd>Esc</kbd> khôi phục tiếng Anh</span>
+      <span><kbd>⌫</kbd> xoá từ đang gõ</span>
+    </div>
+  </div>
+
+  <footer>
+    Dấu · engine Rust + WASM · <a href="https://github.com/hapo-nghialuu/dau" target="_blank">github.com/hapo-nghialuu/dau</a><br>
+    Bản demo review UI trên macOS. Bộ gõ thật chạy trên Linux (Fcitx5).
+  </footer>
+</div>
+
+<script>
+let W = null, mem = null, dec = new TextDecoder("utf-8");
+const out = document.getElementById("out"), pre = document.getElementById("pre"),
+      cur = document.getElementById("cur"), ph = document.getElementById("ph"),
+      screen = document.getElementById("screen");
+
+function readBuf(len) {
+  if (len === 0) return "";
+  const ptr = W.demo_buf_ptr();
+  return dec.decode(new Uint8Array(mem.buffer, ptr, len));
+}
+function setPre(s){ pre.textContent = s; }
+function commitWord(word, brk){ out.textContent += word + brk; setPre(""); }
+
+const BREAKS = { " ":" ", "\n":"\n", ".":".", ",":",", "!":"!", "?":"?", ";":";", ":":":", "\t":"\t" };
+
+function onKey(e){
+  if (!W) return;
+  if (e.key === "Escape"){ e.preventDefault(); const n=W.demo_escape(); const raw=readBuf(n); commitWord(raw,""); return; }
+  if (e.key === "Backspace"){ e.preventDefault(); W.demo_reset(); setPre(""); return; }
+  if (e.key === "Enter"){ e.preventDefault(); const n=W.demo_on_break(10); commitWord(readBuf(n),"\n"); return; }
+  if (e.key.length !== 1 || e.metaKey || e.ctrlKey || e.altKey) return;
+  e.preventDefault();
+  ph.style.display="none";
+  const code = e.key.codePointAt(0);
+  if (BREAKS[e.key] !== undefined){
+    const n = W.demo_on_break(code); commitWord(readBuf(n), BREAKS[e.key]);
+  } else {
+    const n = W.demo_process(code); setPre(readBuf(n));
+  }
+}
+
+function type(str){ screen.focus(); for(const ch of str){ onKey({key:ch, preventDefault(){}, codePointAt:0}); } }
+// helper vì onKey dùng e.key.codePointAt — mô phỏng cho nút ví dụ:
+function feed(str){
+  screen.focus(); ph.style.display="none";
+  for (const ch of str){
+    const code = ch.codePointAt(0);
+    if (BREAKS[ch] !== undefined){ const n=W.demo_on_break(code); commitWord(readBuf(n), BREAKS[ch]); }
+    else { const n=W.demo_process(code); setPre(readBuf(n)); }
+  }
+}
+
+// config wiring
+document.querySelectorAll("#method button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("#method button").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); W && W.demo_set_method(+b.dataset.vni); W && W.demo_reset(); setPre("");
+});
+document.getElementById("autocap").onchange = e => W && W.demo_set_auto_cap(e.target.checked?1:0);
+document.getElementById("autorestore").onchange = e => W && W.demo_set_auto_restore(e.target.checked?1:0);
+document.querySelectorAll("#ex button").forEach(b=>b.onclick=()=>{ out.textContent=""; setPre(""); W.demo_reset(); feed(b.dataset.k); });
+
+screen.addEventListener("keydown", onKey);
+screen.addEventListener("focus", ()=>{ cur.style.display="inline-block"; });
+screen.addEventListener("blur", ()=>{ cur.style.display="none"; });
+
+WebAssembly.instantiateStreaming(fetch("dau_demo.wasm"), {})
+  .then(r => { W = r.instance.exports; mem = W.memory;
+    W.demo_set_auto_cap(0); W.demo_set_auto_restore(1); W.demo_set_method(0);
+    screen.focus();
+  })
+  .catch(err => { document.getElementById("out").textContent = "Lỗi tải WASM: "+err; });
+</script>
+</body>
+</html>
