@@ -4,8 +4,8 @@
 #include <fcitx/inputcontext.h>
 #include <fcitx/inputpanel.h>
 #include <fcitx/userinterface.h>
-// Utils: fcitx::Text + TextFormatFlag (needs Fcitx5::Utils include dir).
-#include <fcitx-utils/text.h>
+// fcitx::Text lives in Core (fcitx/text.h on Ubuntu); TextFormatFlag in Utils.
+#include <fcitx/text.h>
 #include <fcitx-utils/textformatflags.h>
 
 namespace dau {
