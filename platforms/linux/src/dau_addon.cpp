@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include <fcitx/addonfactory.h>
 #include <fcitx/addonmanager.h>
 #include <fcitx/instance.h>

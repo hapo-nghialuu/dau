@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "typing_controller.h"
 
 namespace dau {

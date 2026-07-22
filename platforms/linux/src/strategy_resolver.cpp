@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "strategy_resolver.h"
 
 namespace dau {

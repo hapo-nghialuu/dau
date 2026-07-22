@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #ifndef DAU_KEYCODE_MAP_H
 #define DAU_KEYCODE_MAP_H
 

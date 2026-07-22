@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #ifndef DAU_CONFIG_H
 #define DAU_CONFIG_H
 

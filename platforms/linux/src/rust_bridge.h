@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #ifndef DAU_RUST_BRIDGE_H
 #define DAU_RUST_BRIDGE_H
 

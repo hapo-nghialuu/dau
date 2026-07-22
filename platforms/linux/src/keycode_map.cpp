@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "keycode_map.h"
 
 #include <fcitx-utils/key.h>

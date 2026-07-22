@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "rust_bridge.h"
 
 namespace dau {

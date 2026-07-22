@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "fcitx5_sink.h"
 
 // Core headers first (always on Fcitx5::Core include path).

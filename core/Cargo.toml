@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "Dấu — Vietnamese input method core engine"
+repository = "https://github.com/hapo-nghialuu/dau"
+homepage = "https://github.com/hapo-nghialuu/dau"
+readme = "../README.md"
 
 [lib]
 crate-type = ["rlib", "cdylib", "staticlib"]

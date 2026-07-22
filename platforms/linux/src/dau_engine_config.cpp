@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #include "dau_engine.h"
 
 #include <cstdlib>
