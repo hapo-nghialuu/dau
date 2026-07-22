@@ -1,0 +1,16 @@
+[package]
+name = "dau-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Dấu — Vietnamese input method core engine"
+
+[lib]
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[dependencies]
+# Config is off the keystroke hot-path; single TOML parser for shipped + user files.
+toml = "0.8"
+
+[build-dependencies]
+cbindgen = "0.27"

@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  core:
+    name: core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Format check
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy -- -D warnings
+      - name: Test
+        run: cargo test
+
+  linux-addon:
+    name: linux-addon
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Fcitx5 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config fcitx5 \
+            libfcitx5core-dev libfcitx5config-dev libfcitx5utils-dev \
+            libxkbcommon-dev
+      - name: Addon scaffold pending
+        run: echo "addon scaffold pending P2.1"

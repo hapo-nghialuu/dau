@@ -1,0 +1,17 @@
+# Git Ignore
+
+# CafeKit / Ecosystem
+specs/_shared/
+plans/
+!plans/templates/
+.cafekit-backup/
+.cafekit.lock
+.claude/
+.opencode/
+
+# Build artifacts
+/core/target/
+/target/
+platforms/linux/build/
+*.so
+*.dylib
