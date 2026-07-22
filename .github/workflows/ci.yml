@@ -46,6 +46,15 @@ jobs:
             libfcitx5config-dev \
             libfcitx5utils-dev \
             libxkbcommon-dev
+      - name: Locate fcitx5 headers (diagnostic)
+        run: |
+          echo "=== dpkg text.h/inputpanel ==="
+          dpkg -L libfcitx5utils-dev | grep -E "text.h|textformatflags" || true
+          dpkg -L libfcitx5core-dev | grep -E "inputpanel.h" || true
+          echo "=== find text.h under /usr ==="
+          find /usr -name "text.h" -path "*fcitx*" 2>/dev/null || true
+          echo "=== find fcitx-utils dir ==="
+          find /usr -type d -name "fcitx-utils" 2>/dev/null || true
       - name: Configure & build Fcitx5 addon
         run: |
           cd platforms/linux
