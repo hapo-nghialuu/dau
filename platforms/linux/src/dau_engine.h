@@ -5,11 +5,11 @@
 #include <fcitx/instance.h>
 
 #include "rust_bridge.h"
+#include "typing_controller.h"
 
 namespace dau {
 
-// Thin Fcitx5 adapter around RustBridge.
-// P2.1: minimal key path (processChar → commitString). Full preedit is P2.2.
+// Fcitx5 adapter: classifies keys, drives TypingController + Fcitx5Sink.
 class DauEngine : public fcitx::InputMethodEngineV2 {
 public:
     explicit DauEngine(fcitx::Instance *instance);
@@ -25,13 +25,9 @@ public:
                fcitx::InputContextEvent &event) override;
 
 private:
-    void clearCompose();
-
     [[maybe_unused]] fcitx::Instance *instance_ = nullptr;
     RustBridge bridge_;
-    // Unicode scalar count last committed (for temporary replace via
-    // deleteSurroundingText until real preedit lands in P2.2).
-    int last_commit_chars_ = 0;
+    TypingController controller_;
 };
 
 } // namespace dau

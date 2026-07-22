@@ -6,8 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+include(CTest)
+
 # ---------------------------------------------------------------------------
-# Fcitx5 dependencies
+# Fcitx5 dependencies (addon only; unit tests do not need them)
 # ---------------------------------------------------------------------------
 find_package(Fcitx5Core REQUIRED)
 find_package(Fcitx5Config REQUIRED)
@@ -27,7 +29,7 @@ set(DAU_CORE_INCLUDE "${DAU_CORE_DIR}/include")
 set(DAU_CORE_LIB "${DAU_CORE_DIR}/target/release/libdau_core.a")
 
 # ---------------------------------------------------------------------------
-# Build Rust core (staticlib) before linking the addon
+# Build Rust core (staticlib) before linking the addon / tests
 # ---------------------------------------------------------------------------
 find_program(CARGO_EXECUTABLE cargo REQUIRED)
 
@@ -57,12 +59,74 @@ set_target_properties(dau_core_static PROPERTIES
 )
 add_dependencies(dau_core_static dau_core_rust)
 
+# Helper: link Rust staticlib + system libs needed by libstd.
+function(dau_link_rust_static target_name)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(${target_name} PRIVATE
+      "-Wl,--whole-archive"
+      "${DAU_CORE_LIB}"
+      "-Wl,--no-whole-archive"
+      dl
+      pthread
+      m
+    )
+  elseif(APPLE)
+    target_link_libraries(${target_name} PRIVATE
+      "${DAU_CORE_LIB}"
+      "-framework CoreFoundation"
+      "-framework Security"
+      dl
+      pthread
+      m
+    )
+  else()
+    target_link_libraries(${target_name} PRIVATE
+      dau_core_static
+      dl
+      pthread
+      m
+    )
+  endif()
+endfunction()
+
+# ---------------------------------------------------------------------------
+# Pure typing logic (no fcitx5) — shared by addon + unit tests
+# ---------------------------------------------------------------------------
+add_library(dau_typing STATIC
+  src/rust_bridge.cpp
+  src/typing_controller.cpp
+)
+# PIC required: objects are linked into the MODULE shared library (libdau.so).
+set_target_properties(dau_typing PROPERTIES POSITION_INDEPENDENT_CODE ON)
+add_dependencies(dau_typing dau_core_rust)
+target_include_directories(dau_typing PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${DAU_CORE_INCLUDE}"
+)
+
+# ---------------------------------------------------------------------------
+# Unit test: TypingController + MockSink (NO fcitx5 link)
+# ---------------------------------------------------------------------------
+if(BUILD_TESTING)
+  add_executable(dau_typing_test
+    tests/typing_controller_test.cpp
+  )
+  add_dependencies(dau_typing_test dau_core_rust)
+  target_include_directories(dau_typing_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${DAU_CORE_INCLUDE}"
+  )
+  target_link_libraries(dau_typing_test PRIVATE dau_typing)
+  dau_link_rust_static(dau_typing_test)
+  add_test(NAME dau_typing_test COMMAND dau_typing_test)
+endif()
+
 # ---------------------------------------------------------------------------
 # Addon shared module → libdau.so  (Library=libdau in dau-addon.conf)
 # ---------------------------------------------------------------------------
 add_library(dau MODULE
-  src/rust_bridge.cpp
   src/keycode_map.cpp
+  src/fcitx5_sink.cpp
   src/dau_engine.cpp
   src/dau_addon.cpp
 )
@@ -88,25 +152,9 @@ target_link_libraries(dau PRIVATE
   Fcitx5::Core
   Fcitx5::Config
   Fcitx5::Utils
+  dau_typing
 )
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  target_link_libraries(dau PRIVATE
-    "-Wl,--whole-archive"
-    "${DAU_CORE_LIB}"
-    "-Wl,--no-whole-archive"
-    dl
-    pthread
-    m
-  )
-else()
-  target_link_libraries(dau PRIVATE
-    dau_core_static
-    dl
-    pthread
-    m
-  )
-endif()
+dau_link_rust_static(dau)
 
 # ---------------------------------------------------------------------------
 # Install

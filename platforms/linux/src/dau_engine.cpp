@@ -5,37 +5,62 @@
 #include <fcitx/inputcontext.h>
 #include <fcitx/inputmethodentry.h>
 
+#include "fcitx5_sink.h"
 #include "keycode_map.h"
 
 namespace dau {
 
-DauEngine::DauEngine(fcitx::Instance *instance)
-    : instance_(instance), bridge_() {}
+namespace {
 
-void DauEngine::clearCompose() {
-    bridge_.clear();
-    last_commit_chars_ = 0;
-}
+// Null sink used when we only need to clear compose state without an IC.
+struct NullSink : OutputSink {
+    void setPreedit(const std::string &) override {}
+    void commit(const std::string &) override {}
+    void forward() override {}
+};
+
+} // namespace
+
+DauEngine::DauEngine(fcitx::Instance *instance)
+    : instance_(instance), bridge_(), controller_(&bridge_) {}
 
 void DauEngine::activate(const fcitx::InputMethodEntry &entry,
                          fcitx::InputContextEvent &event) {
     FCITX_UNUSED(entry);
-    FCITX_UNUSED(event);
-    clearCompose();
+    fcitx::InputContext *ic = event.inputContext();
+    if (ic != nullptr) {
+        Fcitx5Sink sink(ic);
+        controller_.resetCompose(sink);
+    } else {
+        NullSink sink;
+        controller_.resetCompose(sink);
+    }
 }
 
 void DauEngine::deactivate(const fcitx::InputMethodEntry &entry,
                            fcitx::InputContextEvent &event) {
     FCITX_UNUSED(entry);
-    FCITX_UNUSED(event);
-    clearCompose();
+    fcitx::InputContext *ic = event.inputContext();
+    if (ic != nullptr) {
+        Fcitx5Sink sink(ic);
+        controller_.resetCompose(sink);
+    } else {
+        NullSink sink;
+        controller_.resetCompose(sink);
+    }
 }
 
 void DauEngine::reset(const fcitx::InputMethodEntry &entry,
                       fcitx::InputContextEvent &event) {
     FCITX_UNUSED(entry);
-    FCITX_UNUSED(event);
-    clearCompose();
+    fcitx::InputContext *ic = event.inputContext();
+    if (ic != nullptr) {
+        Fcitx5Sink sink(ic);
+        controller_.resetCompose(sink);
+    } else {
+        NullSink sink;
+        controller_.resetCompose(sink);
+    }
 }
 
 void DauEngine::keyEvent(const fcitx::InputMethodEntry &entry,
@@ -53,55 +78,47 @@ void DauEngine::keyEvent(const fcitx::InputMethodEntry &entry,
         return;
     }
 
-    // Ctrl / Alt / Super chords: clear compose buffer and let the key through.
-    // KeyState is a bit enum; combine via bool OR on .test(), not operator| on KeyState.
+    Fcitx5Sink sink(ic);
     const auto states = key.states();
+    const fcitx::KeySym sym = key.sym();
+
+    // Ctrl / Alt / Super chords: reset compose and let the key through.
     if (states.test(fcitx::KeyState::Ctrl) ||
         states.test(fcitx::KeyState::Alt) ||
         states.test(fcitx::KeyState::Super)) {
-        clearCompose();
+        controller_.handle(KeyKind::Modifier, 0, false, 0, sink);
         return;
     }
 
-    const fcitx::KeySym sym = key.sym();
+    if (sym == FcitxKey_Escape) {
+        if (controller_.handle(KeyKind::Escape, 0, false, 0, sink)) {
+            keyEvent.filterAndAccept();
+        }
+        return;
+    }
 
-    // Word-break keys: clear and pass through (space/enter/punct/arrows).
     if (isBreakKey(sym)) {
-        clearCompose();
+        // breakChar: printable ASCII for space/punct; 0 for arrows / non-print.
+        const uint32_t breakChar = keysymToChar(sym);
+        const uint32_t brk = breakChar != 0 ? breakChar : static_cast<uint32_t>(' ');
+        // Always returns false — break key must reach the application.
+        controller_.handle(KeyKind::Break, 0, false, brk, sink);
         return;
     }
 
     const uint32_t ch = keysymToChar(sym);
     if (ch == 0) {
-        // Non-printable (BackSpace, Escape, F-keys, ...): pass through.
-        // Escape could restore later (P2.2); for P2.1 just clear buffer.
-        if (sym == FcitxKey_Escape) {
-            clearCompose();
+        // Non-printable (BackSpace, F-keys, ...).
+        if (controller_.handle(KeyKind::Other, 0, false, 0, sink)) {
+            keyEvent.filterAndAccept();
         }
         return;
     }
 
-    // Caps = Shift held for this keystroke (core uses it for CompChar flags).
-    const bool caps = key.states().test(fcitx::KeyState::Shift);
-    const DauResult result = bridge_.processChar(ch, caps);
-
-    // P2.1 temporary path: replace previous commit with current buffer text.
-    // P2.2 will switch to real preedit (updatePreedit / client preedit).
-    if (last_commit_chars_ > 0) {
-        ic->deleteSurroundingText(-last_commit_chars_,
-                                  static_cast<unsigned int>(last_commit_chars_));
-        last_commit_chars_ = 0;
+    const bool caps = states.test(fcitx::KeyState::Shift);
+    if (controller_.handle(KeyKind::Printable, ch, caps, 0, sink)) {
+        keyEvent.filterAndAccept();
     }
-
-    if (result.len > 0) {
-        const std::string text = utf32ToUtf8(result.chars, result.len);
-        if (!text.empty()) {
-            ic->commitString(text);
-            last_commit_chars_ = static_cast<int>(result.len);
-        }
-    }
-
-    keyEvent.filterAndAccept();
 }
 
 } // namespace dau

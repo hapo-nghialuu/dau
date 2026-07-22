@@ -51,3 +51,7 @@ jobs:
           cd platforms/linux
           cmake -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --verbose
+      - name: Unit tests (TypingController, no fcitx5 runtime)
+        run: |
+          cd platforms/linux
+          ctest --test-dir build --output-on-failure
