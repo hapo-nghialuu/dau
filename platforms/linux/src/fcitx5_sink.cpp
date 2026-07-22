@@ -1,9 +1,12 @@
 #include "fcitx5_sink.h"
 
-#include <fcitx-utils/text.h>
+// Core headers first (always on Fcitx5::Core include path).
 #include <fcitx/inputcontext.h>
 #include <fcitx/inputpanel.h>
 #include <fcitx/userinterface.h>
+// Utils: fcitx::Text + TextFormatFlag (needs Fcitx5::Utils include dir).
+#include <fcitx-utils/text.h>
+#include <fcitx-utils/textformatflags.h>
 
 namespace dau {
 
@@ -14,18 +17,19 @@ void Fcitx5Sink::setPreedit(const std::string &utf8) {
         return;
     }
 
-    fcitx::Text text;
+    // Pattern from fcitx5 quickphrase: Text + TextFormatFlags{Underline}.
+    fcitx::Text preedit;
     if (!utf8.empty()) {
-        text.append(utf8, fcitx::TextFormatFlag::Underline);
-        // Cursor after the preedit string (UTF-8 length is accepted by fcitx Text).
-        text.setCursor(static_cast<int>(utf8.size()));
+        preedit.append(utf8,
+                       fcitx::TextFormatFlags{fcitx::TextFormatFlag::Underline});
+        preedit.setCursor(static_cast<int>(utf8.size()));
     }
 
-    // Prefer client-side preedit when the app supports it; otherwise use panel.
+    // Prefer client-side preedit when the app supports it; otherwise panel.
     if (ic_->capabilityFlags().test(fcitx::CapabilityFlag::Preedit)) {
-        ic_->inputPanel().setClientPreedit(text);
+        ic_->inputPanel().setClientPreedit(preedit);
     } else {
-        ic_->inputPanel().setPreedit(text);
+        ic_->inputPanel().setPreedit(preedit);
     }
     ic_->updatePreedit();
     ic_->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);

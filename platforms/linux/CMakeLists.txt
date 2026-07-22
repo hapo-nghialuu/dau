@@ -138,6 +138,29 @@ target_include_directories(dau PRIVATE
   "${DAU_CORE_INCLUDE}"
 )
 
+# Explicit Utils include path for <fcitx-utils/text.h> (preedit Text).
+# Fcitx5::Utils is also linked below; this guards MODULE builds where
+# INTERFACE_INCLUDE_DIRECTORIES of the imported target may not apply alone.
+if(TARGET Fcitx5::Utils)
+  get_target_property(_DAU_FCITX5_UTILS_INCS Fcitx5::Utils INTERFACE_INCLUDE_DIRECTORIES)
+  if(_DAU_FCITX5_UTILS_INCS)
+    target_include_directories(dau PRIVATE ${_DAU_FCITX5_UTILS_INCS})
+  endif()
+endif()
+if(DEFINED Fcitx5Utils_INCLUDE_DIRS)
+  target_include_directories(dau PRIVATE ${Fcitx5Utils_INCLUDE_DIRS})
+endif()
+# Debian/Ubuntu layout fallback: libfcitx5utils-dev → /usr/include/Fcitx5/Utils
+foreach(_dau_fcitx_inc
+    /usr/include/Fcitx5/Utils
+    /usr/include/Fcitx5/Core
+    /usr/include/Fcitx5/Config
+  )
+  if(IS_DIRECTORY "${_dau_fcitx_inc}")
+    target_include_directories(dau PRIVATE "${_dau_fcitx_inc}")
+  endif()
+endforeach()
+
 # CMake MODULE default prefix is "lib" → libdau.so on Linux.
 set_target_properties(dau PROPERTIES
   OUTPUT_NAME "dau"
@@ -148,6 +171,7 @@ set_target_properties(dau PROPERTIES
 # symbols and libstd pieces are not dropped when building a MODULE .so.
 # System libs (dl/pthread/m) come AFTER the archive so --no-undefined linkers
 # can resolve libstd dependencies introduced by whole-archive.
+# Fcitx5::Utils is required for fcitx-utils/text.h include path + Text symbols.
 target_link_libraries(dau PRIVATE
   Fcitx5::Core
   Fcitx5::Config
