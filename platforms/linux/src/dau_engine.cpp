@@ -54,8 +54,11 @@ void DauEngine::keyEvent(const fcitx::InputMethodEntry &entry,
     }
 
     // Ctrl / Alt / Super chords: clear compose buffer and let the key through.
-    if (key.states().testAny(fcitx::KeyState::Ctrl | fcitx::KeyState::Alt |
-                             fcitx::KeyState::Super)) {
+    // KeyState is a bit enum; combine via bool OR on .test(), not operator| on KeyState.
+    const auto states = key.states();
+    if (states.test(fcitx::KeyState::Ctrl) ||
+        states.test(fcitx::KeyState::Alt) ||
+        states.test(fcitx::KeyState::Super)) {
         clearCompose();
         return;
     }
