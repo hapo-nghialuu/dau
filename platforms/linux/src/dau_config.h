@@ -12,6 +12,10 @@ FCITX_DECLARE_LOG_CATEGORY(dau_log);
 
 namespace dau {
 
+// fcitx5 config types (Option, OptionWithAnnotation, Configuration) live in
+// namespace fcitx; bring them in so FCITX_CONFIGURATION expands cleanly here.
+using namespace fcitx;
+
 // GUI method choice (fcitx5 config). Distinct from C ABI DauMethod.
 enum class DauConfigMethod {
     Telex = 0,
