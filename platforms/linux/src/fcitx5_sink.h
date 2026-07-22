@@ -16,6 +16,7 @@ public:
     void setPreedit(const std::string &utf8) override;
     void commit(const std::string &utf8) override;
     void forward() override;
+    void deleteBeforeCursor(uint32_t nChars) override;
 
 private:
     fcitx::InputContext *ic_ = nullptr;

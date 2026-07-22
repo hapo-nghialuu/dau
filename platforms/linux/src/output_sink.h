@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace dau {
@@ -16,6 +17,9 @@ struct OutputSink {
 
     // Let the original key pass through (engine will not filterAndAccept).
     virtual void forward() = 0;
+
+    // Delete n characters before the cursor (commit-atom provisional rewrite).
+    virtual void deleteBeforeCursor(uint32_t nChars) = 0;
 };
 
 } // namespace dau

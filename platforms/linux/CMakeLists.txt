@@ -95,6 +95,7 @@ endfunction()
 add_library(dau_typing STATIC
   src/rust_bridge.cpp
   src/typing_controller.cpp
+  src/strategy_resolver.cpp
 )
 # PIC required: objects are linked into the MODULE shared library (libdau.so).
 set_target_properties(dau_typing PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -105,7 +106,7 @@ target_include_directories(dau_typing PUBLIC
 )
 
 # ---------------------------------------------------------------------------
-# Unit test: TypingController + MockSink (NO fcitx5 link)
+# Unit tests: TypingController + StrategyResolver + MockSink (NO fcitx5 link)
 # ---------------------------------------------------------------------------
 if(BUILD_TESTING)
   add_executable(dau_typing_test
@@ -119,6 +120,17 @@ if(BUILD_TESTING)
   target_link_libraries(dau_typing_test PRIVATE dau_typing)
   dau_link_rust_static(dau_typing_test)
   add_test(NAME dau_typing_test COMMAND dau_typing_test)
+
+  # Resolver only needs strategy_resolver.cpp + dau_core.h (no Rust link).
+  add_executable(dau_strategy_resolver_test
+    tests/strategy_resolver_test.cpp
+    src/strategy_resolver.cpp
+  )
+  target_include_directories(dau_strategy_resolver_test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${DAU_CORE_INCLUDE}"
+  )
+  add_test(NAME dau_strategy_resolver_test COMMAND dau_strategy_resolver_test)
 endif()
 
 # ---------------------------------------------------------------------------

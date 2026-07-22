@@ -25,9 +25,14 @@ public:
                fcitx::InputContextEvent &event) override;
 
 private:
+    // Resolve per-app strategy + safe auto-capitalize for this InputContext.
+    void applyStrategyForIc(fcitx::InputContext *ic);
+
     [[maybe_unused]] fcitx::Instance *instance_ = nullptr;
     RustBridge bridge_;
     TypingController controller_;
+    // From config when exposed; default false (terminal-safe, design §5b).
+    bool cfg_auto_cap_ = false;
 };
 
 } // namespace dau

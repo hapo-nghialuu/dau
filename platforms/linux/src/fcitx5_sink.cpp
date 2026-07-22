@@ -46,4 +46,13 @@ void Fcitx5Sink::forward() {
     // No-op: caller skips filterAndAccept so the original key reaches the app.
 }
 
+void Fcitx5Sink::deleteBeforeCursor(uint32_t nChars) {
+    if (ic_ == nullptr || nChars == 0) {
+        return;
+    }
+    // Offset is negative (before cursor); nChars is the length to delete.
+    ic_->deleteSurroundingText(-static_cast<int>(nChars),
+                               static_cast<unsigned int>(nChars));
+}
+
 } // namespace dau
