@@ -1,6 +1,5 @@
 #include "dau_engine.h"
 
-#include <cstdlib>
 #include <string>
 
 #include <fcitx-utils/key.h>
@@ -12,36 +11,32 @@
 #include "keycode_map.h"
 #include "strategy_resolver.h"
 
+// Log category definition (declare in dau_config.h).
+FCITX_DEFINE_LOG_CATEGORY(dau_log, "dau");
+
 namespace dau {
 
 namespace {
 
-// Null sink used when we only need to clear compose state without an IC.
-struct NullSink : OutputSink {
-    void setPreedit(const std::string &) override {}
-    void commit(const std::string &) override {}
-    void forward() override {}
-    void deleteBeforeCursor(uint32_t) override {}
-};
+const char *strategyLabel(Strategy s) {
+    switch (s) {
+    case Strategy::Preedit:
+        return "Preedit";
+    case Strategy::CommitAtom:
+        return "CommitAtom";
+    case Strategy::Passthrough:
+        return "Passthrough";
+    }
+    return "?";
+}
 
 } // namespace
 
 DauEngine::DauEngine(fcitx::Instance *instance)
     : instance_(instance), bridge_(), controller_(&bridge_) {
-    // Load user config once at addon init (shipped path NULL in v1).
-    const char *home = std::getenv("HOME");
-    std::string userPath;
-    if (home != nullptr && home[0] != '\0') {
-        userPath = std::string(home) + "/.config/dau/config.toml";
-    }
-    const char *userCStr = userPath.empty() ? nullptr : userPath.c_str();
-    bridge_.loadConfig(/*shipped=*/nullptr, userCStr);
-
-    // Core defaults auto_capitalize=true; force safe default for terminal
-    // unless config explicitly enables it. C ABI has no getter for the flag
-    // after load, so v1 keeps cfg_auto_cap_ = false (design §5b).
-    cfg_auto_cap_ = false;
-    bridge_.setAutoCapitalize(false);
+    // Load fcitx5 conf + TOML, then apply GUI over bridge (GUI wins).
+    reloadConfig();
+    FCITX_LOGC(dau_log, Info) << "addon initialized";
 }
 
 void DauEngine::applyStrategyForIc(fcitx::InputContext *ic) {
@@ -65,6 +60,11 @@ void DauEngine::applyStrategyForIc(fcitx::InputContext *ic) {
     } else {
         bridge_.setAutoCapitalize(false);
     }
+
+    // Privacy: log app id + strategy only — never key content.
+    FCITX_LOGC(dau_log, Info)
+        << "strategy app=" << (program.empty() ? "(empty)" : program)
+        << " hasPreedit=" << hasPreedit << " -> " << strategyLabel(strat);
 }
 
 void DauEngine::activate(const fcitx::InputMethodEntry &entry,
@@ -76,8 +76,7 @@ void DauEngine::activate(const fcitx::InputMethodEntry &entry,
         Fcitx5Sink sink(ic);
         controller_.resetCompose(sink);
     } else {
-        NullSink sink;
-        controller_.resetCompose(sink);
+        resetComposeSilent();
     }
 }
 
@@ -89,8 +88,7 @@ void DauEngine::deactivate(const fcitx::InputMethodEntry &entry,
         Fcitx5Sink sink(ic);
         controller_.resetCompose(sink);
     } else {
-        NullSink sink;
-        controller_.resetCompose(sink);
+        resetComposeSilent();
     }
 }
 
@@ -102,8 +100,7 @@ void DauEngine::reset(const fcitx::InputMethodEntry &entry,
         Fcitx5Sink sink(ic);
         controller_.resetCompose(sink);
     } else {
-        NullSink sink;
-        controller_.resetCompose(sink);
+        resetComposeSilent();
     }
 }
 

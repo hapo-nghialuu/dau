@@ -140,6 +140,7 @@ add_library(dau MODULE
   src/keycode_map.cpp
   src/fcitx5_sink.cpp
   src/dau_engine.cpp
+  src/dau_engine_config.cpp
   src/dau_addon.cpp
 )
 
