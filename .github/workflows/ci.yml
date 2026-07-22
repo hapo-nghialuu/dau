@@ -31,14 +31,23 @@ jobs:
   linux-addon:
     name: linux-addon
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - name: Install Fcitx5 build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake pkg-config fcitx5 \
-            libfcitx5core-dev libfcitx5config-dev libfcitx5utils-dev \
+          sudo apt-get install -y \
+            cmake \
+            pkg-config \
+            extra-cmake-modules \
+            fcitx5 \
+            libfcitx5core-dev \
+            libfcitx5config-dev \
+            libfcitx5utils-dev \
             libxkbcommon-dev
-      - name: Addon scaffold pending
-        run: echo "addon scaffold pending P2.1"
+      - name: Configure & build Fcitx5 addon
+        run: |
+          cd platforms/linux
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --verbose
