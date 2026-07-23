@@ -21,9 +21,11 @@ fcitx5 -r    # restart fcitx5
 Mở `fcitx5-configtool` → thêm **Dấu** vào danh sách input method → đặt phím chuyển (mặc định Ctrl+Space).
 
 **Kiểm tra cơ bản trước khi vào ma trận:**
-- [ ] Dấu xuất hiện trong fcitx5-configtool với **icon** đúng.
-- [ ] Cấu hình (Kiểu gõ Telex/VNI, các toggle) hiện trong configtool.
-- [ ] Gõ `tieengs` trong 1 ô text bất kỳ → ra `tiếng`.
+- [x] Dấu xuất hiện trong fcitx5-configtool với **icon** đúng. *(Ubuntu 24.04, session Fcitx5)*
+- [x] Cấu hình (Kiểu gõ Telex/VNI, các toggle) hiện trong configtool.
+- [x] Gõ `tieengs` trong 1 ô text bất kỳ → ra `tiếng`. *(browser/GUI OK)*
+
+**Môi trường đã verify (2026-07-23):** Ubuntu 24.04.4 LTS, GNOME Wayland, Fcitx5 5.1.7, addon system `/usr/lib/.../libdau.so`. Session IM: `XMODIFIERS=@im=fcitx` (sau environment.d + mask IBus GNOME service).
 
 ## 3. Ma trận kiểm thử (điền kết quả)
 
@@ -40,12 +42,12 @@ Chuỗi test chuẩn mỗi app:
 
 | App | Môi trường | Test 1-5 | Kết quả | Ghi chú |
 |-----|-----------|----------|---------|---------|
-| GNOME Terminal (VTE) | X11 / Wayland | | ⬜ | |
+| GNOME Terminal (VTE) | Wayland | smoke `tieengs` | **PASS** | Fail ban đầu: `program=frontend:ibus` → CommitAtom stack. Fix: `[apps] "frontend:ibus"="preedit"`. |
 | Konsole | X11 / Wayland | | ⬜ | |
 | Kitty | X11 / Wayland | | ⬜ | |
 | Alacritty | X11 / Wayland | | ⬜ | |
 | Ghostty | X11 / Wayland | | ⬜ | |
-| **Claude Code** (trong terminal trên) | | | ⬜ | AI CLI — trọng tâm |
+| **Claude Code** (trong terminal trên) | Wayland | | ⬜ *đang test* | AI CLI — trọng tâm |
 | **Codex CLI** | | | ⬜ | AI CLI — trọng tâm |
 | tmux (trong terminal T1) | | | ⬜ | |
 
@@ -62,16 +64,16 @@ Chuỗi test chuẩn mỗi app:
 
 | App | Test | Kết quả |
 |-----|------|---------|
-| Firefox (thanh địa chỉ + ô text) | `Vieejt` → `Việt` | ⬜ |
+| Firefox / Chrome (ô text) | `tieengs` / Telex cơ bản | **PASS** (báo user 2026-07-23) |
 | Chrome | address bar (selection method) | ⬜ |
 | LibreOffice Writer | đoạn văn có dấu | ⬜ |
 | LibreOffice Calc | ô nhập | ⬜ |
 
 ## 4. Kiểm tra riêng north star (terminal/AI CLI)
 
-- [ ] Gõ nhanh liên tục trong Claude Code khi nó đang render lại màn hình → **không nuốt chữ**.
-- [ ] `git`, `ls`, `cd` → KHÔNG bị auto-hoa thành `Git`/`Ls` (auto-cap tắt cho terminal — design §5b).
-- [ ] Preedit (gạch chân) hiển thị đúng trong terminal khi đang soạn từ.
+- [ ] Gõ nhanh liên tục trong Claude Code khi nó đang render lại màn hình → **không nuốt chữ**. *(đang test)*
+- [x] `git`, `ls`, `cd` → KHÔNG bị auto-hoa — config `auto_capitalize = false` + design §5b.
+- [x] Terminal preedit path sau fix `frontend:ibus` (không còn stack `tti…`).
 - [ ] Chuyển app terminal→trình duyệt→terminal: strategy tự đổi đúng (không kẹt).
 
 ## 5. Tune theo kết quả
@@ -79,10 +81,11 @@ Chuỗi test chuẩn mỗi app:
 - App nào preedit lỗi/nuốt chữ → thêm vào `~/.config/dau/config.toml`:
   ```toml
   [apps]
-  "app-id-thật" = "commit-atom"   # hoặc "passthrough"
+  "app-id-thật" = "preedit"   # terminal/VTE: ưu tiên preedit
+  # hoặc "commit-atom" / "passthrough"
   ```
-  (lấy app-id qua `fcitx5` log category `dau`, hoặc `xprop`/`fcitx5-diagnose`).
-- Cập nhật shipped `profiles.toml` (nếu có) với quirk phát hiện.
+  **Lấy app-id:** `DebugInfo` D-Bus hoặc log `strategy app=...` (category `dau`). Trên GNOME thường thấy `frontend:ibus`, **không** tên process.
+- Shipped: `platforms/linux/data/profiles.toml` → cài `${prefix}/share/dau/profiles.toml`.
 - **Quyết định Warp**: T1 nếu 5/5 test pass, giữ T2 nếu có lỗi.
 
 ## 6. Điều kiện DONE cho Phase 4 (P4.3 release v0.1.0)

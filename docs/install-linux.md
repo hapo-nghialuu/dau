@@ -141,11 +141,60 @@ rm -rf platforms/linux/build
 ./scripts/build.sh && ./scripts/install.sh
 ```
 
-### Gõ không dấu / preedit lạ trong terminal
+### Gõ chồng chữ trong terminal (`ttitietie…` / `tieengs` → rác)
+
+**Triệu chứng:** mỗi phím chèn thêm cả từ đang soạn (t + ti + tie + …). Trình duyệt / ô text GUI vẫn đúng.
+
+**Nguyên nhân (đã xác nhận Ubuntu 24.04 GNOME Wayland):** app tới Fcitx5 qua **ibusfrontend** → `InputContext.program()` = `frontend:ibus` (không phải `gnome-terminal-server`). Resolver rơi **CommitAtom**; `deleteSurroundingText` hỏng trên VTE → chồng chữ.
+
+**Cách xử lý (user, không cần rebuild):**
+
+```bash
+mkdir -p ~/.config/dau
+# tối thiểu — key quan trọng:
+cat >> ~/.config/dau/config.toml << 'EOF'
+[apps]
+"frontend:ibus" = "preedit"
+"frontend:dbus" = "preedit"
+"frontend:xim" = "preedit"
+EOF
+fcitx5 -r
+```
+
+Đóng hết terminal cũ, mở cửa sổ mới, gõ lại `tieengs`.
+
+**Shipped profile:** gói cài đặt có `${prefix}/share/dau/profiles.toml` (cùng nội dung `frontend:*` + terminal). User file `~/.config/dau/config.toml` **đè** shipped khi trùng key.
+
+**Xem app-id runtime:**
+
+```bash
+gdbus call --session --dest org.fcitx.Fcitx5 --object-path /controller \
+  --method org.fcitx.Fcitx.Controller1.DebugInfo
+# hoặc log category dau:
+fcitx5 -rd --verbose=dau=5 2>&1 | grep strategy
+```
+
+### Session Ubuntu GNOME vẫn IBus (`XMODIFIERS=@im=ibus`)
+
+`im-config -n fcitx5` + `~/.xinputrc` **không đủ** trên GNOME Wayland. Cần:
+
+1. `~/.config/environment.d/99-fcitx5.conf` (`GTK_IM_MODULE` / `QT_IM_MODULE` / `XMODIFIERS=@im=fcitx`)
+2. Autostart `fcitx5 -d`
+3. **Logout / login** (bắt buộc)
+4. Nếu IBus GNOME service vẫn chiếm: `systemctl --user mask org.freedesktop.IBus.session.GNOME.service` (hoàn nguyên bằng `unmask`)
+
+Kiểm tra sau login:
+
+```bash
+echo "$XMODIFIERS $GTK_IM_MODULE $QT_IM_MODULE"   # kỳ vọng @im=fcitx / fcitx
+pgrep -a fcitx5
+```
+
+### Gõ không dấu / preedit lạ trong terminal (khác chồng chữ)
 
 - Một số terminal cần bật support input method (xem doc terminal).
 - Thử app GUI (LibreOffice, trình duyệt) để phân biệt lỗi app vs addon.
-- Xem thêm chiến lược preedit/backspace trong [design-per-app-typing.md](design-per-app-typing.md).
+- Xem chiến lược preedit/backspace trong [design-per-app-typing.md](design-per-app-typing.md).
 
 ### Build lỗi “Fcitx5Core not found”
 

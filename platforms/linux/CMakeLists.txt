@@ -218,8 +218,14 @@ install(
   DESTINATION "${FCITX_INSTALL_PKGDATADIR}/inputmethod"
 )
 
-# Icons (hicolor theme) → ${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/...
+# Shipped per-app strategies (merged under ~/.config/dau/config.toml).
 include(GNUInstallDirs)
+install(
+  FILES "${CMAKE_CURRENT_SOURCE_DIR}/data/profiles.toml"
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/dau"
+)
+
+# Icons (hicolor theme) → ${CMAKE_INSTALL_PREFIX}/share/icons/hicolor/...
 install(
   DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/icons/hicolor"
   DESTINATION "${CMAKE_INSTALL_DATADIR}/icons"

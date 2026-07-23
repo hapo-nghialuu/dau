@@ -47,14 +47,20 @@ Deterministic: cùng app → cùng hành vi. Không đo đạc, không ML, khôn
 ### Schema `apps.toml`
 
 ```toml
-# Shipped: /usr/share/dau/profiles.toml · User: ~/.config/dau/apps.toml (đè)
+# Shipped: ${prefix}/share/dau/profiles.toml · User: ~/.config/dau/config.toml [apps] (đè)
+# Lưu ý runtime GNOME: program() thường là "frontend:ibus" (ibusfrontend), không phải tên process.
+[app."frontend:ibus"]
+strategy = "preedit"
+
 [app."org.wezfurlong.wezterm"]
-strategy = "preedit"          # preedit | commit-atom | passthrough
+strategy = "preedit"
 
 [app."Alacritty"]
-strategy = "commit-atom"      # ví dụ: preedit render lỗi ở bản cũ
+strategy = "commit-atom"      # ví dụ lịch sử; v1 shipped dùng preedit cho terminal
 notes = "alacritty <0.13 preedit không vẽ gạch chân"
 ```
+
+*(Schema thực tế trong engine: bảng `[apps]` trong TOML phẳng — key = app-id string, value = `preedit` | `commit-atom` | `passthrough`. Ví dụ trên minh họa ý design; file shipped: `platforms/linux/data/profiles.toml`.)*
 
 ## 4. Ma trận app v1 (đã duyệt: Rộng + Warp, chia tier)
 

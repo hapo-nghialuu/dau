@@ -1,0 +1,47 @@
+# Dấu — shipped per-app typing strategies (base layer).
+# Merged under user ~/.config/dau/config.toml (user wins on key conflict).
+# Install path: ${prefix}/share/dau/profiles.toml
+#
+# Evidence (Ubuntu 24.04 GNOME Wayland, 2026-07-23):
+# GNOME Terminal / many GTK apps reach Fcitx5 via ibusfrontend.
+# InputContext.program() is literally "frontend:ibus" — not the process name.
+# Without Preedit force, resolver falls to CommitAtom; deleteSurroundingText
+# fails in VTE → stacked preedit: t + ti + tie + ... ("ttitietie...").
+
+[apps]
+# Fcitx5 protocol frontends (must stay preedit unless proven otherwise)
+"frontend:ibus" = "preedit"
+"frontend:dbus" = "preedit"
+"frontend:xim" = "preedit"
+
+# Common terminals / consoles (when program() is the real app id)
+"gnome-terminal-server" = "preedit"
+"org.gnome.Terminal" = "preedit"
+"gnome-terminal" = "preedit"
+"kgx" = "preedit"
+"org.gnome.Console" = "preedit"
+"ptyxis" = "preedit"
+"org.gnome.Ptyxis" = "preedit"
+"konsole" = "preedit"
+"org.kde.konsole" = "preedit"
+"kitty" = "preedit"
+"Alacritty" = "preedit"
+"alacritty" = "preedit"
+"ghostty" = "preedit"
+"wezterm" = "preedit"
+"org.wezfurlong.wezterm" = "preedit"
+"tilix" = "preedit"
+"com.gexperts.Tilix" = "preedit"
+"xfce4-terminal" = "preedit"
+"xterm" = "preedit"
+"XTerm" = "preedit"
+"mate-terminal" = "preedit"
+"terminator" = "preedit"
+"warp" = "preedit"
+"Warp" = "preedit"
+
+# Editors / AI CLI hosts (best-effort ids)
+"code" = "preedit"
+"code-oss" = "preedit"
+"Cursor" = "preedit"
+"cursor" = "preedit"
