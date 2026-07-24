@@ -7,15 +7,13 @@ Phiên bản sản phẩm: **0.1.0** · License: **MIT** · Repo: https://github
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Fcitx5 (Linux)                                             │
-│    dau_addon / dau_engine  →  Fcitx5Sink (preedit/commit)   │
-│              │                                              │
-│    TypingController  ←→  StrategyResolver                    │
-│              │           (preedit vs backspace, per context)│
-│         RustBridge (C ABI)                                  │
-└──────────────┼──────────────────────────────────────────────┘
-               │  dau_core.h / libdau_core.a
-┌──────────────▼──────────────────────────────────────────────┐
+│  Fcitx5 (Linux)              │  CGEventTap (macOS)          │
+│  TypingController + Sink     │  TypingSession + TextInjector│
+│  StrategyResolver            │  InjectionProfileResolver    │
+│  RustBridge (C++)            │  DauCoreBridge (Swift)       │
+└──────────────┬───────────────┴──────────────┬───────────────┘
+               │  dau_core.h / libdau_core.a  │
+┌──────────────▼──────────────────────────────▼───────────────┐
 │  core/  (Rust crate: dau-core)                              │
 │    engine: Telex, VNI, tone, buffer, UX (auto-restore, …)   │
 │    config (TOML) · ffi (C ABI ổn định)                      │
