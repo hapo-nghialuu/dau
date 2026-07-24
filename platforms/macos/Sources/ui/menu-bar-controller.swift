@@ -1,4 +1,5 @@
-// Dấu macOS — status item menu: icon states, VI/EN, Telex/VNI, AX, About, quit (MENU-02).
+// Dấu macOS — status item + popup menu (MENU-02 / Gõ-Nhanh-style layout, original code).
+// Header: brand logo + name + method subtitle + VI/EN switch. No gonhanh source.
 
 import AppKit
 import Foundation
@@ -70,9 +71,17 @@ final class MenuBarController: NSObject {
     private func applyButtonAppearance() {
         guard let button = statusItem?.button else { return }
 
-        button.title = ""
-        button.imagePosition = .imageOnly
+        // Logo always; show VI/EN text only when ready to type (user request).
+        let title = state.menuBarTitle
         button.image = Self.statusItemImage(named: state.menuBarIconState.assetName)
+        button.title = title
+        if title.isEmpty {
+            button.imagePosition = .imageOnly
+            statusItem?.length = NSStatusItem.squareLength
+        } else {
+            button.imagePosition = .imageLeading
+            statusItem?.length = NSStatusItem.variableLength
+        }
         button.toolTip = state.menuBarToolTip
         button.setAccessibilityLabel(state.menuBarAccessibilityLabel)
         button.setAccessibilityTitle(state.menuBarAccessibilityLabel)
@@ -97,25 +106,28 @@ final class MenuBarController: NSObject {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        let header = NSMenuItem(
-            title: state.versionLabel,
-            action: nil,
-            keyEquivalent: ""
+        // Header: logo + "Dấu" + method/shortcut + ON/OFF switch (Gõ Nhanh layout pattern).
+        let header = NSMenuItem()
+        header.view = MenuHeaderView(
+            subtitle: state.menuHeaderSubtitle,
+            typingEnabled: state.typingEnabled,
+            target: self,
+            toggleAction: #selector(handleToggleTyping)
         )
-        header.isEnabled = false
         menu.addItem(header)
-        menu.addItem(.separator())
 
-        let toggleTitle = state.typingEnabled ? "Chế độ: VI (bật)" : "Chế độ: EN (tắt)"
-        let toggle = NSMenuItem(
-            title: toggleTitle,
+        // Keyboard toggle (⌘⇧E) — works even though primary UI is the header switch.
+        let toggleHotkey = NSMenuItem(
+            title: "Bật/Tắt tiếng Việt",
             action: #selector(handleToggleTyping),
             keyEquivalent: "e"
         )
-        toggle.keyEquivalentModifierMask = [.command, .shift]
-        toggle.target = self
-        toggle.state = state.typingEnabled ? .on : .off
-        menu.addItem(toggle)
+        toggleHotkey.keyEquivalentModifierMask = [.command, .shift]
+        toggleHotkey.target = self
+        toggleHotkey.isHidden = true
+        menu.addItem(toggleHotkey)
+
+        menu.addItem(.separator())
 
         let telex = NSMenuItem(
             title: "Telex",
@@ -137,16 +149,8 @@ final class MenuBarController: NSObject {
 
         menu.addItem(.separator())
 
-        let axTitle: String
-        if state.accessibilityTrusted {
-            axTitle = state.eventTapRunning
-                ? "Accessibility: OK · tap running"
-                : "Accessibility: OK · tap stopped"
-        } else {
-            axTitle = "Accessibility: chưa cấp quyền…"
-        }
         let axItem = NSMenuItem(
-            title: axTitle,
+            title: state.accessibilityMenuLabel,
             action: #selector(handleAccessibility),
             keyEquivalent: ""
         )
@@ -155,7 +159,7 @@ final class MenuBarController: NSObject {
 
         if state.inputSourceBlocked {
             let blocked = NSMenuItem(
-                title: "Input source: tạm tắt (IME/non-Latin)",
+                title: "Tạm tắt theo nguồn bàn phím (IME)",
                 action: nil,
                 keyEquivalent: ""
             )
@@ -163,43 +167,34 @@ final class MenuBarController: NSObject {
             menu.addItem(blocked)
         }
 
-        if !state.statusDetail.isEmpty {
-            let detail = NSMenuItem(
-                title: state.statusDetail,
-                action: nil,
-                keyEquivalent: ""
-            )
-            detail.isEnabled = false
-            menu.addItem(detail)
-        }
-
         let restart = NSMenuItem(
-            title: "Khởi động lại event tap",
+            title: "Khởi động lại bộ gõ",
             action: #selector(handleRestartTap),
             keyEquivalent: ""
         )
         restart.target = self
         menu.addItem(restart)
 
-        if !state.accessibilityTrusted {
-            let onboard = NSMenuItem(
-                title: "Hướng dẫn cấp quyền…",
-                action: #selector(handleOnboarding),
-                keyEquivalent: ""
-            )
-            onboard.target = self
-            menu.addItem(onboard)
-        }
+        // Minimal settings: onboarding / permission guide (no full settings window).
+        let settings = NSMenuItem(
+            title: "Cài đặt…",
+            action: #selector(handleOnboarding),
+            keyEquivalent: ""
+        )
+        settings.target = self
+        menu.addItem(settings)
 
         menu.addItem(.separator())
 
         let about = NSMenuItem(
-            title: "Giới thiệu Dấu",
+            title: "Giới thiệu",
             action: #selector(handleAbout),
             keyEquivalent: ""
         )
         about.target = self
         menu.addItem(about)
+
+        // YAGNI: no update checker. Greyed placeholder kept out of menu.
 
         let quit = NSMenuItem(
             title: "Thoát Dấu",
@@ -244,4 +239,82 @@ final class MenuBarController: NSObject {
     }
 
     @objc private func handleQuit() { onQuit?() }
+}
+
+// MARK: - Header view (logo + title + method + switch)
+
+/// Custom menu header: logo + app name + method/shortcut subtitle + VI/EN switch.
+private final class MenuHeaderView: NSView {
+    private let logoView = NSImageView()
+    private let titleLabel = NSTextField(labelWithString: "Dấu")
+    private let subtitleLabel = NSTextField(labelWithString: "")
+    private let toggle = NSSwitch()
+
+    init(
+        subtitle: String,
+        typingEnabled: Bool,
+        target: AnyObject?,
+        toggleAction: Selector
+    ) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 56))
+
+        wantsLayer = true
+
+        // Logo (AppLogo brand color).
+        if let logo = NSImage(named: "AppLogo") {
+            logo.isTemplate = false
+            logo.size = NSSize(width: 28, height: 28)
+            logoView.image = logo
+        } else if let fallback = NSImage(named: "MenuBarActive") {
+            fallback.isTemplate = false
+            fallback.size = NSSize(width: 28, height: 28)
+            logoView.image = fallback
+        }
+        logoView.imageScaling = .scaleProportionallyUpOrDown
+        logoView.frame = NSRect(x: 14, y: 14, width: 28, height: 28)
+        addSubview(logoView)
+
+        titleLabel.stringValue = "Dấu"
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.isBezeled = false
+        titleLabel.drawsBackground = false
+        titleLabel.isEditable = false
+        titleLabel.isSelectable = false
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.frame = NSRect(x: 50, y: 28, width: 160, height: 18)
+        addSubview(titleLabel)
+
+        subtitleLabel.stringValue = subtitle
+        subtitleLabel.font = .systemFont(ofSize: 11, weight: .regular)
+        subtitleLabel.textColor = .secondaryLabelColor
+        subtitleLabel.isBezeled = false
+        subtitleLabel.drawsBackground = false
+        subtitleLabel.isEditable = false
+        subtitleLabel.isSelectable = false
+        subtitleLabel.lineBreakMode = .byTruncatingTail
+        subtitleLabel.frame = NSRect(x: 50, y: 10, width: 160, height: 16)
+        addSubview(subtitleLabel)
+
+        toggle.controlSize = .small
+        toggle.state = typingEnabled ? .on : .off
+        toggle.target = target
+        toggle.action = toggleAction
+        toggle.setAccessibilityLabel("Bật hoặc tắt gõ tiếng Việt")
+        // Right-align switch.
+        toggle.sizeToFit()
+        let switchSize = toggle.fittingSize
+        toggle.frame = NSRect(
+            x: bounds.width - switchSize.width - 14,
+            y: (bounds.height - switchSize.height) / 2,
+            width: switchSize.width,
+            height: switchSize.height
+        )
+        toggle.autoresizingMask = [.minXMargin]
+        addSubview(toggle)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 }

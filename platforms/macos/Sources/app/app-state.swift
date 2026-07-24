@@ -80,8 +80,20 @@ final class AppState: ObservableObject {
         return "Dấu \(marketing) · core \(core)"
     }
 
-    /// Visible status-item title must stay empty; icon carries the state (MENU-02).
-    var menuBarTitle: String { "" }
+    /// Short badge on the status item next to the logo.
+    /// - Ready + VI typing: **VI**
+    /// - Ready + EN / blocked: **EN**
+    /// - Not ready (no Accessibility or tap down): empty (logo only)
+    var menuBarTitle: String {
+        switch menuBarIconState {
+        case .setup:
+            return ""
+        case .active:
+            return "VI"
+        case .inactive:
+            return "EN"
+        }
+    }
 
     /// Icon state: setup before active VI; blocked/tap-failed never map to `.active`.
     var menuBarIconState: MenuBarIconState {
@@ -101,16 +113,16 @@ final class AppState: ObservableObject {
         switch menuBarIconState {
         case .setup:
             if !accessibilityTrusted {
-                return "Dấu — cần setup (chưa cấp Accessibility)"
+                return "Dấu — cần cấp quyền Accessibility"
             }
-            return "Dấu — cần setup (event tap chưa chạy)"
+            return "Dấu — event tap chưa chạy"
         case .active:
-            return "Dấu — VI"
+            return "Dấu — VI (đang gõ tiếng Việt)"
         case .inactive:
             if inputSourceBlocked {
-                return "Dấu — tạm tắt (input source)"
+                return "Dấu — EN (tạm tắt theo input source)"
             }
-            return "Dấu — EN"
+            return "Dấu — EN (tắt gõ tiếng Việt)"
         }
     }
 
@@ -118,14 +130,36 @@ final class AppState: ObservableObject {
     var menuBarAccessibilityLabel: String {
         switch menuBarIconState {
         case .setup:
-            return "Dấu — cần setup"
+            return "Dấu — chưa sẵn sàng"
         case .active:
             return "Dấu — VI"
         case .inactive:
             if inputSourceBlocked {
-                return "Dấu — tạm tắt"
+                return "Dấu — EN, tạm tắt"
             }
             return "Dấu — EN"
         }
+    }
+
+    /// Menu row for Accessibility diagnostic.
+    /// Trusted + listener running = "đã cấp quyền · đang gõ" (not merely "đã cấp").
+    var accessibilityMenuLabel: String {
+        if accessibilityTrusted && eventTapRunning {
+            return "Accessibility: đã cấp quyền · đang gõ"
+        }
+        if accessibilityTrusted && !eventTapRunning {
+            return "Accessibility: đã cấp — đang khởi động…"
+        }
+        return "Accessibility: chưa cấp quyền…"
+    }
+
+    /// Header subtitle: current method + optional toggle shortcut hint.
+    var menuHeaderSubtitle: String {
+        "\(engineMethod.menuLabel) · ⌘⇧E"
+    }
+
+    /// True when user has granted Accessibility and the keyboard listener is up.
+    var isReadyToType: Bool {
+        accessibilityTrusted && eventTapRunning
     }
 }

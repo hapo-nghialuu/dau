@@ -72,24 +72,51 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(state.menuBarIconState, .inactive)
     }
 
-    // MARK: - Title empty + toolTip / a11y labels
+    // MARK: - Status-item title badge (logo + VI/EN when ready)
 
-    func testMenuBarTitleIsEmpty() {
+    func testMenuBarTitleEmptyWhenSetup() {
         let state = AppState()
-        makeTrustedRunning(state: state)
+        state.accessibilityTrusted = false
+        state.eventTapRunning = false
         state.typingEnabled = true
         XCTAssertEqual(state.menuBarTitle, "")
 
-        state.accessibilityTrusted = false
+        state.accessibilityTrusted = true
+        state.eventTapRunning = false
         XCTAssertEqual(state.menuBarTitle, "")
     }
+
+    func testMenuBarTitleVIWhenActive() {
+        let state = AppState()
+        makeTrustedRunning(state: state)
+        state.typingEnabled = true
+        XCTAssertEqual(state.menuBarTitle, "VI")
+        XCTAssertTrue(state.isReadyToType)
+    }
+
+    func testMenuBarTitleENWhenInactive() {
+        let state = AppState()
+        makeTrustedRunning(state: state)
+        state.typingEnabled = false
+        XCTAssertEqual(state.menuBarTitle, "EN")
+    }
+
+    func testMenuBarTitleENWhenBlocked() {
+        let state = AppState()
+        makeTrustedRunning(state: state)
+        state.typingEnabled = true
+        state.inputSourceBlocked = true
+        XCTAssertEqual(state.menuBarTitle, "EN")
+    }
+
+    // MARK: - toolTip / a11y labels
 
     func testToolTipAndAccessibilityForSetup() {
         let state = AppState()
         state.accessibilityTrusted = false
         state.eventTapRunning = false
-        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — cần setup")
-        XCTAssertTrue(state.menuBarToolTip.contains("cần setup"))
+        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — chưa sẵn sàng")
+        XCTAssertTrue(state.menuBarToolTip.contains("Accessibility"))
     }
 
     func testToolTipAndAccessibilityForTapStopped() {
@@ -97,15 +124,15 @@ final class AppStateTests: XCTestCase {
         state.accessibilityTrusted = true
         state.eventTapRunning = false
         XCTAssertEqual(state.menuBarIconState, .setup)
-        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — cần setup")
-        XCTAssertTrue(state.menuBarToolTip.contains("event tap"))
+        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — chưa sẵn sàng")
+        XCTAssertTrue(state.menuBarToolTip.contains("event tap") || state.menuBarToolTip.contains("chưa chạy"))
     }
 
     func testToolTipAndAccessibilityForVI() {
         let state = AppState()
         makeTrustedRunning(state: state)
         state.typingEnabled = true
-        XCTAssertEqual(state.menuBarToolTip, "Dấu — VI")
+        XCTAssertEqual(state.menuBarToolTip, "Dấu — VI (đang gõ tiếng Việt)")
         XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — VI")
     }
 
@@ -113,7 +140,7 @@ final class AppStateTests: XCTestCase {
         let state = AppState()
         makeTrustedRunning(state: state)
         state.typingEnabled = false
-        XCTAssertEqual(state.menuBarToolTip, "Dấu — EN")
+        XCTAssertEqual(state.menuBarToolTip, "Dấu — EN (tắt gõ tiếng Việt)")
         XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — EN")
     }
 
@@ -122,8 +149,38 @@ final class AppStateTests: XCTestCase {
         makeTrustedRunning(state: state)
         state.typingEnabled = true
         state.inputSourceBlocked = true
-        XCTAssertTrue(state.menuBarToolTip.contains("tạm tắt"))
-        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — tạm tắt")
+        XCTAssertTrue(state.menuBarToolTip.contains("tạm tắt") || state.menuBarToolTip.contains("EN"))
+        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — EN, tạm tắt")
+    }
+
+    // MARK: - Accessibility menu label
+
+    func testAccessibilityMenuLabelWhenGrantedAndRunning() {
+        let state = AppState()
+        makeTrustedRunning(state: state)
+        XCTAssertEqual(state.accessibilityMenuLabel, "Accessibility: đã cấp quyền · đang gõ")
+    }
+
+    func testMenuHeaderSubtitleIncludesMethodAndShortcut() {
+        let state = AppState()
+        state.engineMethod = .telex
+        XCTAssertEqual(state.menuHeaderSubtitle, "Telex · ⌘⇧E")
+        state.engineMethod = .vni
+        XCTAssertEqual(state.menuHeaderSubtitle, "VNI · ⌘⇧E")
+    }
+
+    func testAccessibilityMenuLabelWhenUntrusted() {
+        let state = AppState()
+        state.accessibilityTrusted = false
+        state.eventTapRunning = false
+        XCTAssertEqual(state.accessibilityMenuLabel, "Accessibility: chưa cấp quyền…")
+    }
+
+    func testAccessibilityMenuLabelWhenTrustedButTapDown() {
+        let state = AppState()
+        state.accessibilityTrusted = true
+        state.eventTapRunning = false
+        XCTAssertEqual(state.accessibilityMenuLabel, "Accessibility: đã cấp — đang khởi động…")
     }
 
     // MARK: - Asset name table (stable contract for menu bar controller)
