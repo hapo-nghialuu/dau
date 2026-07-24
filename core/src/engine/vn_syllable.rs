@@ -154,7 +154,26 @@ fn validate_laws(buf: &Buffer) -> Result<(), &'static str> {
         }
     }
 
+    // Illegal nucleus `uă` (plain u + breve a). Real orthography uses `ưa`.
+    // Onset `qu` + `ă` (e.g. quắm) is fine: nucleus is only `ă`.
+    if is_ua_breve_nucleus(chars, parts.nucleus) {
+        return Err("illegal nucleus uă");
+    }
+
     Ok(())
+}
+
+/// Nucleus is exactly plain `u` + `ă` (breve on a) — not a Vietnamese nucleus.
+fn is_ua_breve_nucleus(chars: &[CompChar], nucleus: (usize, usize)) -> bool {
+    if nucleus.1 - nucleus.0 != 2 {
+        return false;
+    }
+    let u = &chars[nucleus.0];
+    let a = &chars[nucleus.0 + 1];
+    u.base == 'u'
+        && u.mark == Mark::None
+        && a.base == 'a'
+        && a.mark == Mark::Breve
 }
 
 fn mark_compatible(c: &CompChar) -> bool {
@@ -342,5 +361,69 @@ mod tests {
     #[test]
     fn invalid_no_vowel() {
         assert!(!is_valid_syllable(&buf_from("btw")));
+    }
+
+    fn push_marked(b: &mut Buffer, base: char, mark: Mark) {
+        let mut c = CompChar::new(base, false);
+        c.mark = mark;
+        b.push(c);
+    }
+
+    #[test]
+    fn rejects_illegal_nucleus_ua_breve() {
+        // đuă — onset đ, nucleus uă
+        let mut b = Buffer::new();
+        push_marked(&mut b, 'd', Mark::Stroke);
+        b.push(CompChar::new('u', false));
+        push_marked(&mut b, 'a', Mark::Breve);
+        assert!(!is_valid_syllable(&b));
+        assert!(!is_valid_committed_syllable(&b));
+        assert_eq!(b.display(), "đuă");
+    }
+
+    #[test]
+    fn keeps_legal_ua_ua_horn_and_qu_breve() {
+        // đua
+        let mut dua = Buffer::new();
+        push_marked(&mut dua, 'd', Mark::Stroke);
+        dua.push(CompChar::new('u', false));
+        dua.push(CompChar::new('a', false));
+        assert!(is_valid_syllable(&dua));
+        assert!(is_valid_committed_syllable(&dua));
+
+        // đưa
+        let mut dua_horn = Buffer::new();
+        push_marked(&mut dua_horn, 'd', Mark::Stroke);
+        push_marked(&mut dua_horn, 'u', Mark::Horn);
+        dua_horn.push(CompChar::new('a', false));
+        assert!(is_valid_syllable(&dua_horn));
+        assert!(is_valid_committed_syllable(&dua_horn));
+        assert_eq!(dua_horn.display(), "đưa");
+
+        // đầu — nucleus âu
+        let mut dau = Buffer::new();
+        push_marked(&mut dau, 'd', Mark::Stroke);
+        push_marked(&mut dau, 'a', Mark::Circumflex);
+        dau.push(CompChar::new('u', false));
+        // tone grave on â for đầu
+        if let Some(ch) = dau.get_mut(1) {
+            ch.tone = Tone::Grave;
+        }
+        assert!(is_valid_syllable(&dau));
+        assert!(is_valid_committed_syllable(&dau));
+        assert_eq!(dau.display(), "đầu");
+
+        // quắm — onset qu, nucleus ă + coda m
+        let mut quam = Buffer::new();
+        quam.push(CompChar::new('q', false));
+        quam.push(CompChar::new('u', false));
+        push_marked(&mut quam, 'a', Mark::Breve);
+        quam.push(CompChar::new('m', false));
+        if let Some(ch) = quam.get_mut(2) {
+            ch.tone = Tone::Acute;
+        }
+        assert!(is_valid_syllable(&quam));
+        assert!(is_valid_committed_syllable(&quam));
+        assert_eq!(quam.display(), "quắm");
     }
 }

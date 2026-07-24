@@ -206,6 +206,64 @@ impl Engine {
         self.buffer.display()
     }
 
+    /// Backspace one **user-visible** Unicode scalar while composing.
+    ///
+    /// # Semantics
+    ///
+    /// - Removes the last [`CompChar`] from the display buffer (one precomposed
+    ///   letter such as `ư`, `ế`, `đ` — not a raw keystroke and not a combining
+    ///   mark in isolation).
+    /// - Re-syncs [`Self::raw`] so Space / Escape / auto-restore cannot resurrect
+    ///   content that was deleted. After an edit, raw is rebuilt from the
+    ///   remaining bases (+ caps); marks and tones stay only on the buffer so
+    ///   further Telex/VNI keys continue from the edited display state.
+    /// - Returns `Some(new_display)` when a scalar was removed (including
+    ///   `Some("")` when the last scalar was deleted).
+    /// - Returns `None` when there is nothing to delete (empty compose). The
+    ///   host should treat that as a no-op and may pass the physical Backspace
+    ///   through to the application.
+    ///
+    /// # Examples (behavior under test)
+    ///
+    /// - Telex `dduwa` → `đưa`, backspace → `đư`, `a` → `đưa`
+    /// - Telex `tieengs` → `tiếng`, backspace → `tiến`, `g` → `tiếng`
+    /// - Telex `aa` → `â`, backspace → `""` (one display unit, not raw `a`)
+    /// - Empty buffer, backspace → `None`
+    pub fn backspace_one_display_scalar(&mut self) -> Option<String> {
+        if self.buffer.is_empty() {
+            // Defensive: empty display must not keep a zombie raw word.
+            if !self.raw_keys.is_empty() {
+                self.raw_keys.clear();
+                self.pass_through = false;
+            }
+            return None;
+        }
+
+        self.buffer.pop();
+
+        if self.buffer.is_empty() {
+            // Full clear of the composing word — same blank state as a fresh word.
+            self.raw_keys.clear();
+            self.pass_through = false;
+            return Some(String::new());
+        }
+
+        // Keep raw/buffer consistent for continued typing and commit/restore.
+        self.resync_raw_after_display_edit();
+        Some(self.buffer.display())
+    }
+
+    /// Rebuild `raw_keys` from the remaining buffer after a display-scalar edit.
+    ///
+    /// Raw is an ASCII-base approximation of what remains (case preserved via
+    /// `CompChar::caps`). It is intentionally not a full reverse of Telex/VNI
+    /// key history: the buffer owns marks/tones for further composition, while
+    /// raw only needs to be short enough that deleted tails cannot reappear on
+    /// Space auto-restore or Escape.
+    fn resync_raw_after_display_edit(&mut self) {
+        self.raw_keys = raw_keys_from_buffer(&self.buffer);
+    }
+
     fn commit_current_word(&self, brk: char) -> String {
         if self.raw_keys.is_empty() && self.buffer.is_empty() {
             return String::new();
@@ -242,6 +300,20 @@ impl Engine {
         self.raw_keys.clear();
         self.pass_through = false;
     }
+}
+
+/// ASCII-base raw string derived from remaining [`CompChar`]s (caps preserved).
+fn raw_keys_from_buffer(buf: &Buffer) -> String {
+    let mut raw = String::with_capacity(buf.chars().len());
+    for c in buf.chars() {
+        let ch = if c.caps {
+            c.base.to_ascii_uppercase()
+        } else {
+            c.base
+        };
+        raw.push(ch);
+    }
+    raw
 }
 
 #[cfg(test)]

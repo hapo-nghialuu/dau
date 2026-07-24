@@ -56,6 +56,17 @@ typedef struct DauResult {
 extern "C" {
 #endif // __cplusplus
 
+// Backspace one user-visible Unicode scalar while composing.
+//
+// Returns [`DauAction::UpdatePreedit`] with the new preedit text when a scalar
+// was removed (including empty text after deleting the last scalar). Returns
+// [`DauAction::None`] when the compose buffer is already empty (host may pass
+// the physical Backspace through) or when the engine is null / disabled.
+//
+// # Safety
+// - `engine` must be null or a valid live pointer from [`dau_engine_new`].
+struct DauResult dau_backspace(struct Engine *engine);
+
 // Clear the composing word.
 //
 // # Safety

@@ -102,7 +102,7 @@ fn try_circumflex_or_append(buf: &mut Buffer, letter: char, caps: bool) {
     buf.push(CompChar::new(letter, caps));
 }
 
-/// w: uw→ư, ow→ơ, uo+w→ươ, bare w→ư; double-key reverts.
+/// w: uo+w→ươ, ua+w→ưa, aw→ă, ow→ơ, uw→ư, bare w→ư; double-key reverts.
 fn try_w(buf: &mut Buffer, caps: bool) {
     if buf.is_empty() {
         let mut c = CompChar::new('u', caps);
@@ -126,6 +126,15 @@ fn try_w(buf: &mut Buffer, caps: bool) {
     }
 
     if apply_uo_w(buf) {
+        if is_valid_syllable(buf) {
+            return;
+        }
+        buf.restore(snap.clone());
+    }
+
+    // ua + w → ưa (before aw → ă). Bare `u`+`a` is a nucleus; onset `qu`+`a`
+    // is not (`quắm` still uses aw). Without this, aw wins and yields illegal `uă`.
+    if apply_ua_w(buf) {
         if is_valid_syllable(buf) {
             return;
         }
@@ -210,6 +219,35 @@ fn apply_uo_w(buf: &mut Buffer) -> bool {
         if let Some(o) = buf.get_mut(j) {
             o.mark = Mark::Horn;
         }
+        return true;
+    }
+    false
+}
+
+/// Horn on bare `u` when the buffer has nucleus `ua` (→ `ưa`), not onset `qu`+`a`.
+fn apply_ua_w(buf: &mut Buffer) -> bool {
+    let Some(a_idx) = find_rightmost(buf, |c| c.base == 'a' && c.mark == Mark::None) else {
+        return false;
+    };
+    if a_idx == 0 {
+        return false;
+    }
+    let u_ok = buf
+        .get(a_idx - 1)
+        .is_some_and(|c| c.base == 'u' && c.mark == Mark::None);
+    if !u_ok {
+        return false;
+    }
+    // `qu` + vowel: `u` belongs to the onset, so `w` must mean `ă` on `a`.
+    if a_idx >= 2
+        && buf
+            .get(a_idx - 2)
+            .is_some_and(|q| q.base == 'q' && q.mark == Mark::None)
+    {
+        return false;
+    }
+    if let Some(ch) = buf.get_mut(a_idx - 1) {
+        ch.mark = Mark::Horn;
         return true;
     }
     false

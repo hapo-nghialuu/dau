@@ -188,6 +188,31 @@ pub unsafe extern "C" fn dau_clear(engine: *mut Engine) {
     (*engine).clear();
 }
 
+/// Backspace one user-visible Unicode scalar while composing.
+///
+/// Returns [`DauAction::UpdatePreedit`] with the new preedit text when a scalar
+/// was removed (including empty text after deleting the last scalar). Returns
+/// [`DauAction::None`] when the compose buffer is already empty (host may pass
+/// the physical Backspace through) or when the engine is null / disabled.
+///
+/// # Safety
+/// - `engine` must be null or a valid live pointer from [`dau_engine_new`].
+#[no_mangle]
+pub unsafe extern "C" fn dau_backspace(engine: *mut Engine) -> DauResult {
+    if engine.is_null() {
+        return DauResult::empty();
+    }
+    // SAFETY: non-null pointer owned by caller, created by `dau_engine_new`.
+    let eng = &mut *engine;
+    if !eng.is_enabled() {
+        return DauResult::empty();
+    }
+    match eng.backspace_one_display_scalar() {
+        Some(text) => DauResult::from_text(DauAction::UpdatePreedit, &text, false),
+        None => DauResult::empty(),
+    }
+}
+
 /// Switch input method. Does not clear the current buffer.
 ///
 /// # Safety
@@ -453,6 +478,10 @@ mod tests {
             let r = dau_escape(null);
             assert_eq!(r.action, DauAction::None);
 
+            let r = dau_backspace(null);
+            assert_eq!(r.action, DauAction::None);
+            assert_eq!(r.len, 0);
+
             dau_clear(null);
             dau_set_method(null, DauMethod::Vni);
             dau_set_enabled(null, false);
@@ -460,6 +489,42 @@ mod tests {
             dau_set_auto_restore(null, false);
             dau_set_shortcuts(null, ptr::null(), 0);
             dau_engine_free(null);
+        }
+    }
+
+    #[test]
+    fn backspace_one_display_scalar_telex() {
+        // SAFETY: engine from dau_engine_new; freed at end of test.
+        unsafe {
+            let eng = dau_engine_new(DauMethod::Telex);
+            dau_set_auto_capitalize(eng, false);
+            dau_set_auto_restore(eng, false);
+
+            for ch in "dduwa".chars() {
+                let r = dau_process_char(eng, ch as u32, false);
+                assert_eq!(r.action, DauAction::UpdatePreedit);
+            }
+            // Preedit should be "đưa"; backspace one visible scalar → "đư".
+            let r = dau_backspace(eng);
+            assert_eq!(r.action, DauAction::UpdatePreedit);
+            assert_eq!(utf32_to_string(&r), "đư");
+
+            let r = dau_process_char(eng, 'a' as u32, false);
+            assert_eq!(utf32_to_string(&r), "đưa");
+
+            // Empty compose → None so host may pass physical Backspace.
+            dau_clear(eng);
+            let r = dau_backspace(eng);
+            assert_eq!(r.action, DauAction::None);
+            assert_eq!(r.len, 0);
+
+            // Disabled engine is also a no-op.
+            dau_process_char(eng, 'a' as u32, false);
+            dau_set_enabled(eng, false);
+            let r = dau_backspace(eng);
+            assert_eq!(r.action, DauAction::None);
+
+            dau_engine_free(eng);
         }
     }
 
