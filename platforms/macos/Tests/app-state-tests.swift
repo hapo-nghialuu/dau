@@ -74,16 +74,16 @@ final class AppStateTests: XCTestCase {
 
     // MARK: - Status-item title badge (logo + VI/EN when ready)
 
-    func testMenuBarTitleEmptyWhenSetup() {
+    func testMenuBarTitleENWhenSetup() {
         let state = AppState()
         state.accessibilityTrusted = false
         state.eventTapRunning = false
         state.typingEnabled = true
-        XCTAssertEqual(state.menuBarTitle, "")
+        XCTAssertEqual(state.menuBarTitle, "EN")
 
         state.accessibilityTrusted = true
         state.eventTapRunning = false
-        XCTAssertEqual(state.menuBarTitle, "")
+        XCTAssertEqual(state.menuBarTitle, "EN")
     }
 
     func testMenuBarTitleVIWhenActive() {
@@ -94,20 +94,19 @@ final class AppStateTests: XCTestCase {
         XCTAssertTrue(state.isReadyToType)
     }
 
-    func testMenuBarTitleEmptyWhenInactiveEN() {
+    func testMenuBarTitleENWhenInactive() {
         let state = AppState()
         makeTrustedRunning(state: state)
         state.typingEnabled = false
-        // User: only show VI when ready to type VN; EN/setup = logo only.
-        XCTAssertEqual(state.menuBarTitle, "")
+        XCTAssertEqual(state.menuBarTitle, "EN")
     }
 
-    func testMenuBarTitleEmptyWhenBlocked() {
+    func testMenuBarTitleENWhenBlocked() {
         let state = AppState()
         makeTrustedRunning(state: state)
         state.typingEnabled = true
         state.inputSourceBlocked = true
-        XCTAssertEqual(state.menuBarTitle, "")
+        XCTAssertEqual(state.menuBarTitle, "EN")
     }
 
     // MARK: - toolTip / a11y labels

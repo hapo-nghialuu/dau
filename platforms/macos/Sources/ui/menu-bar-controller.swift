@@ -76,33 +76,15 @@ final class MenuBarController: NSObject {
     private func applyButtonAppearance() {
         guard let button = statusItem?.button else { return }
 
-        // Logo always; show VI/EN text only when ready to type (user request).
-        let title = state.menuBarTitle
-        button.image = Self.statusItemImage(named: state.menuBarIconState.assetName)
-        button.title = title
-        if title.isEmpty {
-            button.imagePosition = .imageOnly
-            statusItem?.length = NSStatusItem.squareLength
-        } else {
-            button.imagePosition = .imageLeading
-            statusItem?.length = NSStatusItem.variableLength
-        }
+        // Text-only badge: VI when ready+typing, EN otherwise (no status-item logo).
+        button.image = nil
+        button.title = state.menuBarTitle
+        button.imagePosition = .noImage
+        statusItem?.length = NSStatusItem.variableLength
+        button.font = NSFont.menuBarFont(ofSize: 0)
         button.toolTip = state.menuBarToolTip
         button.setAccessibilityLabel(state.menuBarAccessibilityLabel)
         button.setAccessibilityTitle(state.menuBarAccessibilityLabel)
-    }
-
-    /// Load catalog brand image in **original** colors (red logo), not template mono.
-    /// User request: menubar matches AppIcon / Linux brand (full color).
-    static func statusItemImage(named name: String) -> NSImage? {
-        guard let image = NSImage(named: name) else {
-            return nil
-        }
-        image.isTemplate = false
-        // Keep status-item scale ~18 pt; color logo stays legible on light/dark bars.
-        let side: CGFloat = 18
-        image.size = NSSize(width: side, height: side)
-        return image
     }
 
     // MARK: - Menu
