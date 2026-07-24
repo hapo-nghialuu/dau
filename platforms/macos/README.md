@@ -2,6 +2,21 @@
 
 CGEventTap + Swift menu-bar app over the shared `dau-core` C ABI.
 
+## Prerequisites
+
+| Tool | Notes |
+|------|--------|
+| macOS 13+ | Deployment target hiện tại |
+| Xcode 15+ | `xcodebuild`, macOS SDK |
+| Rust / cargo | Build `libdau_core.a` |
+| Accessibility (TCC) | User grant khi chạy — **không** tự cấp bằng script |
+
+Worktree ví dụ:
+
+```bash
+cd /Users/nghialuutrung/.herdr/worktrees/dau/feature-macos-start
+```
+
 ## Layout
 
 ```text
@@ -9,6 +24,7 @@ platforms/macos/
 ├── Dau.xcodeproj/          # schemes: Dau, DauTests
 ├── Sources/
 │   ├── app/                # @main, AppDelegate, AppState
+│   ├── session/            # TypingSession (map sync / inject async)
 │   ├── bridge/             # DauCoreBridge, mapper, MacKeyPipeline
 │   ├── config/             # injection profiles + resolver
 │   ├── input/              # EventTap, classifier, focus, input-source
@@ -16,15 +32,66 @@ platforms/macos/
 │   └── ui/                 # menu bar, Accessibility onboarding
 ├── Support/dau-bridging-header.h
 ├── Resources/              # Info.plist, entitlements, profiles.toml
-└── Tests/                  # unit tests (no live CGEvent posts)
+├── Tests/                  # unit tests (no live system-wide smoke)
+└── build/                  # gitignored — lib, Debug/Release app, DerivedData
 ```
 
-## Build
+## Build chuẩn (dev smoke)
+
+Từ **root repo / worktree** (không `cd` vào `platforms/macos` trước khi gọi script):
 
 ```bash
 ./scripts/build/macos.sh --debug
-./scripts/build/macos.sh --adhoc
 ```
+
+Script sẽ:
+
+1. `cargo build --release` cho `dau-core` → `platforms/macos/build/lib/libdau_core.a`
+2. `xcodebuild` scheme **Dau**, configuration **Debug**
+3. Copy / đặt artifact tại path dưới
+
+### Artifact chính
+
+| Mục | Path (relative root) |
+|-----|----------------------|
+| **App smoke** | `platforms/macos/build/Debug/Dau.app` |
+| Static lib | `platforms/macos/build/lib/libdau_core.a` |
+| DerivedData (xcode) | `platforms/macos/build/DerivedData/…` (nếu script dùng) |
+
+Absolute (worktree hiện tại):
+
+```text
+/Users/nghialuutrung/.herdr/worktrees/dau/feature-macos-start/platforms/macos/build/Debug/Dau.app
+```
+
+### Kiểm build
+
+```bash
+test -d platforms/macos/build/Debug/Dau.app && echo APP_OK
+codesign --verify --verbose=2 platforms/macos/build/Debug/Dau.app
+```
+
+### Fallback (khi script lỗi)
+
+```bash
+cargo build --manifest-path core/Cargo.toml --release
+# copy/link lib theo README script nếu cần, rồi:
+xcodebuild \
+  -project platforms/macos/Dau.xcodeproj \
+  -scheme Dau \
+  -configuration Debug \
+  -sdk macosx \
+  -derivedDataPath platforms/macos/build/DerivedData \
+  build
+```
+
+App fallback:
+
+```text
+platforms/macos/build/DerivedData/Build/Products/Debug/Dau.app
+```
+
+### Unit test (không thay smoke tay)
 
 ```bash
 xcodebuild test \
@@ -33,25 +100,82 @@ xcodebuild test \
   -destination 'platform=macOS'
 ```
 
-Artifacts: `platforms/macos/build/Debug/Dau.app` (or Release).
+### Mode khác
 
-## Run (dev)
+```bash
+./scripts/build/macos.sh --adhoc    # Release-ish ad-hoc sign (xem script)
+./scripts/build/macos.sh --help     # full flags
+```
 
-1. Build Debug.
-2. Launch `platforms/macos/build/Debug/Dau.app`.
-3. Grant **Accessibility** when prompted (menu bar shows `Dấu?` until trusted).
-4. Menu bar: **VI/EN**, **Telex/VNI**, restart tap, quit.
-5. Type Telex in Terminal (`tieengs` → `tiếng`).
+Public **Developer ID + notarize** = P4 — cần cert; không bắt buộc smoke local.
 
-## Runtime path
+## Chuẩn bị app để smoke (user)
+
+### 1. Mở app
+
+```bash
+open platforms/macos/build/Debug/Dau.app
+```
+
+- App **menu bar** (accessory / không Dock).
+- Không thấy icon: kiểm tra menu bar overflow, hoặc Activity Monitor process **Dau**.
+
+Chạy foreground (log stderr `[dau] …`):
+
+```bash
+platforms/macos/build/Debug/Dau.app/Contents/MacOS/Dau
+```
+
+### 2. Accessibility (bắt buộc)
+
+1. System Settings → **Privacy & Security** → **Accessibility** → bật **Dau**.
+2. Hoặc follow onboarding trong app (prompt TCC).
+3. Menu bar: restart tap / đợi trạng thái trusted (README cũ: `Dấu?` cho đến khi OK).
+4. **Mỗi lần đổi path binary / rebuild** có thể phải xóa Dau khỏi list Accessibility rồi thêm lại.
+
+Script **không** ghi TCC database.
+
+### 3. Menu bar tối thiểu
+
+| Control | Việc |
+|---------|------|
+| **VI / EN** | Bật/tắt compose tiếng Việt |
+| **Telex / VNI** | Kiểu gõ engine |
+| Restart tap | Sau khi cấp AX hoặc tap bị disable |
+| Quit | Thoát sạch |
+
+### 4. Gợi ý corpus smoke (user tự ghi PASS/FAIL)
+
+| App | Gõ | Kỳ vọng |
+|-----|-----|---------|
+| TextEdit | `tieengs` + Space | `tiếng ` |
+| TextEdit | `Vieejt` + Space | `Việt ` |
+| TextEdit | gõ dở + Esc | restore raw |
+| Terminal.app | cùng Telex | không nuốt/dính nghiêm trọng |
+| IDE terminal / Claude Code | gõ nhanh | ghi riêng nếu fail |
+
+Tắt tạm OpenKey / Gõ Nhanh / IME khác khi so sánh.
+
+### 5. Rebuild → re-test
+
+```bash
+./scripts/build/macos.sh --debug
+# re-check Accessibility nếu binary path đổi
+open platforms/macos/build/Debug/Dau.app
+```
+
+## Runtime path (kiến trúc)
 
 ```text
-CGEventTap → KeyClassifier → profile resolve (cached)
-  → MacKeyPipeline (dau-core) → BridgeResult
+CGEventTap → KeyClassifier → profile cache
+  → TypingSession (queue.sync map → queue.async inject)
+  → MacKeyPipeline / dau-core → BridgeResult
   → TextInjector (backspace + Unicode, synthetic marker)
 ```
 
-Toggle EN, focus change, tap restart, and non-Latin / Vietnamese IME input sources clear compose state.
+Toggle EN, focus change, tap restart, input source non-Latin: clear compose.
+
+Quyết định kiến trúc: [docs/project-anchor.md](../../docs/project-anchor.md) §4.1 + §8.6.
 
 ## Entitlements
 
@@ -60,15 +184,28 @@ Toggle EN, focus change, tap restart, and non-Latin / Vietnamese IME input sourc
 | `Dau.entitlements.dev` | no sandbox; `get-task-allow` (Debug) |
 | `Dau.entitlements.production` | no sandbox; no `get-task-allow` |
 
-Accessibility is a **TCC user grant**, not an entitlement. This app never writes the TCC database.
+Accessibility = **TCC user grant**, không phải entitlement.
 
 ## Bundle id (placeholder)
 
-`io.github.hapo-nghialuu.dau` — change only with release-owner approval (TCC re-auth).
+`io.github.hapo-nghialuu.dau` — đổi chỉ khi release-owner OK (TCC re-auth).
 
-## Out of scope (later WPs)
+## Out of scope (sau smoke)
 
-- Full P3 injection matrix (selection / empty prefix / syncProxy / axDirect product paths)
-- Advanced settings UI / profile editor
+- Full P3 inject matrix (selection / empty prefix / syncProxy / axDirect product)
+- Advanced settings / profile editor UI
 - Developer ID + notarize (P4)
-- Core / Linux changes
+- Core / Linux product changes
+
+## Receipt build (máy dev, tham chiếu)
+
+Lần chuẩn bị smoke (worktree `feature-macos-start`):
+
+| Field | Value |
+|-------|--------|
+| Command | `./scripts/build/macos.sh --debug` → exit **0** |
+| App | `platforms/macos/build/Debug/Dau.app` |
+| codesign --verify | OK |
+| HEAD | `ca4189c` (tại thời điểm build) |
+| arch | arm64 |
+| Smoke runtime | **user** — chưa claim PASS |
