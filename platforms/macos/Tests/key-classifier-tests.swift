@@ -200,6 +200,67 @@ final class KeyClassifierTests: XCTestCase {
         XCTAssertEqual(key.pipelineKind, .boundary)
     }
 
+    // MARK: - DELETE-05: paste / shortcut boundaries + delete flags
+
+    func testCommandVIsOtherBoundary() {
+        // Cmd+V (paste) must never enter compose; pipeline resets on .boundary.
+        let key = KeyClassifier.classify(
+            KeyClassifierInput(keyCode: 9, characters: "v", command: true)
+        )
+        XCTAssertEqual(key.kind, .other)
+        XCTAssertEqual(key.pipelineKind, .boundary)
+        XCTAssertNil(key.scalarValue)
+    }
+
+    func testCommandVIdleAndComposeSameClassification() {
+        // Classifier is stateless: idle vs composing does not change Cmd+V class.
+        let idle = KeyClassifier.classify(
+            KeyClassifierInput(keyCode: 9, characters: "v", command: true)
+        )
+        let again = KeyClassifier.classify(
+            KeyClassifierInput(keyCode: 9, characters: "v", command: true)
+        )
+        XCTAssertEqual(idle, again)
+        XCTAssertEqual(idle.pipelineKind, .boundary)
+    }
+
+    func testDeleteRepeatFlagPreserved() {
+        let key = KeyClassifier.classify(
+            KeyClassifierInput(
+                keyCode: KeyClassifier.KeyCode.delete,
+                isRepeat: true
+            )
+        )
+        XCTAssertEqual(key.kind, .delete)
+        XCTAssertEqual(key.pipelineKind, .delete)
+        XCTAssertTrue(key.isRepeat)
+    }
+
+    func testForwardDeleteRepeatFlagPreserved() {
+        let key = KeyClassifier.classify(
+            KeyClassifierInput(
+                keyCode: KeyClassifier.KeyCode.forwardDelete,
+                isRepeat: true
+            )
+        )
+        XCTAssertEqual(key.kind, .delete)
+        XCTAssertTrue(key.isRepeat)
+    }
+
+    func testCommandDeleteNotFirstClassDelete() {
+        // Distinct from bare Delete: app word-delete shortcut, compose must reset via boundary.
+        let bare = KeyClassifier.classify(
+            KeyClassifierInput(keyCode: KeyClassifier.KeyCode.delete)
+        )
+        let withCmd = KeyClassifier.classify(
+            KeyClassifierInput(keyCode: KeyClassifier.KeyCode.delete, command: true)
+        )
+        XCTAssertEqual(bare.kind, .delete)
+        XCTAssertEqual(withCmd.kind, .other)
+        XCTAssertEqual(withCmd.pipelineKind, .boundary)
+        XCTAssertNotEqual(bare.pipelineKind, withCmd.pipelineKind)
+    }
+
     // MARK: - Edge cases
 
     func testEmptyCharactersNonSpecialIsOther() {

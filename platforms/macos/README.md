@@ -31,10 +31,22 @@ platforms/macos/
 │   ├── output/             # TextInjector, methods, AX helpers
 │   └── ui/                 # menu bar, Accessibility onboarding
 ├── Support/dau-bridging-header.h
-├── Resources/              # Info.plist, entitlements, profiles.toml
+├── Resources/
+│   ├── Info.plist, entitlements, profiles.toml
+│   └── Assets.xcassets/    # AppIcon, AppLogo, MenuBar{Setup,Active,Inactive}
 ├── Tests/                  # unit tests (no live system-wide smoke)
 └── build/                  # gitignored — lib, Debug/Release app, DerivedData
 ```
+
+### Brand assets (ASSET-01)
+
+| Asset name | Dùng cho |
+|------------|----------|
+| `AppIcon` | Finder / About / Dock khi activation policy regular |
+| `AppLogo` | Onboarding / UI brand (color) |
+| `MenuBarSetup` / `MenuBarActive` / `MenuBarInactive` | Status item template images (MENU-02 wire) |
+
+Nguồn master: `assets/logo.svg` (render vector → slot; không upscale PNG nhỏ). `LSUIElement=true` giữ app accessory (không Dock mặc định).
 
 ## Build chuẩn (dev smoke)
 
@@ -155,6 +167,26 @@ Script **không** ghi TCC database.
 | IDE terminal / Claude Code | gõ nhanh | ghi riêng nếu fail |
 
 Tắt tạm OpenKey / Gõ Nhanh / IME khác khi so sánh.
+
+### 4b. Manual matrix — Delete/retype + paste/media (DELETE-05)
+
+Unit tests **không** thay smoke tay. P0 contract hiện tại: **Backspace/Delete khi đang compose = wipe toàn bộ provisional** (không phải xoá từng ký tự). Ghi app / version / method / raw keys / expected / actual / PASS|FAIL.
+
+Chạy tối thiểu trên **TextEdit**, **Terminal.app**, một **browser contenteditable** (Safari/Chromium), và **chat** nơi đã smoke Dấu.
+
+| # | Bối cảnh | Thao tác | Kỳ vọng |
+|---|----------|----------|---------|
+| D1 | Telex compose | `tieengs` → Backspace → gõ lại `tieengs` → Space | Wipe hết provisional; màn hình còn `tiếng ` **một lần** |
+| D2 | VNI compose | `tie6ng1` → Backspace → gõ lại → Space | Tương tự D1 → `tiếng ` một lần |
+| D3 | Sau commit | Gõ xong từ + Space → Backspace | App xoá **một** ký tự (Space hoặc chữ cuối theo caret); **không** inject word cũ |
+| D4 | Idle (không compose) | Backspace / Forward Delete | Pass-through bình thường của app |
+| D5 | Đổi method | Wipe → chuyển Telex↔VNI → gõ từ mới | Word mới đúng method; không dính provisional cũ |
+| P1 | Idle | Cmd+V paste **plain text** | Dấu không nuốt shortcut; text dán đúng; gõ `tieengs` sau đó sạch |
+| P2 | Đang compose | Gõ dở → Cmd+V paste **plain text** | Shortcut pass-through; compose reset; sau paste gõ từ mới **không** dính/lặp |
+| P3 | Idle | Cmd+V paste **image** hoặc **GIF** | Không nuốt Cmd+V; không inject ký tự lạ; word kế tiếp sạch |
+| P4 | Đang compose | Gõ dở → paste **image/GIF** | Giống P3 + state compose không “dính” vào media |
+
+Nếu whole-wipe (D1/D2) không chấp nhận được khi smoke, ghi FAIL + expected UX → mở package P1 (per-character Backspace), **không** đổi semantics trong P0.
 
 ### 5. Rebuild → re-test
 

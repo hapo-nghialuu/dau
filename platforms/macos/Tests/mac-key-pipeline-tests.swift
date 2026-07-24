@@ -173,6 +173,176 @@ final class MacKeyPipelineTests: XCTestCase {
         XCTAssertEqual(pipeline.provisionalLength, 0)
     }
 
+    // MARK: - DELETE-05: full-word wipe → retype → commit (P0 contract = whole provisional)
+
+    /// P0 characterizes delete-during-compose as **whole-provisional wipe**, not per-character.
+    func testTelexFullWordDeleteRetypeCommitOnce() {
+        _ = typeASCII("tieengs")
+        XCTAssertEqual(pipeline.provisionalText, "tiếng")
+        let wipeLen = pipeline.provisionalLength
+        XCTAssertEqual(wipeLen, "tiếng".unicodeScalars.count)
+
+        let wipe = pipeline.handleDelete()
+        XCTAssertEqual(wipe.backspace, wipeLen, "wipe every provisional scalar")
+        XCTAssertEqual(wipe.text, "")
+        XCTAssertTrue(wipe.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+        XCTAssertEqual(pipeline.provisionalText, "")
+
+        // Retype full word after wipe — no leftover core / provisional.
+        _ = typeASCII("tieengs")
+        XCTAssertEqual(pipeline.provisionalText, "tiếng")
+        XCTAssertEqual(pipeline.provisionalLength, wipeLen)
+
+        let commit = pipeline.handleBreak(sc(" "))
+        XCTAssertEqual(commit.backspace, 0, "matching provisional → no retype inject")
+        XCTAssertEqual(commit.text, "")
+        XCTAssertFalse(commit.consumeOriginal, "Space is forwarded once")
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+        XCTAssertEqual(pipeline.provisionalText, "")
+    }
+
+    func testVniFullWordDeleteRetypeCommitOnce() {
+        bridge.setMethod(DauMethod_Vni)
+        _ = typeASCII("tie6ng1")
+        XCTAssertEqual(pipeline.provisionalText, "tiếng")
+        let wipeLen = pipeline.provisionalLength
+        XCTAssertEqual(wipeLen, "tiếng".unicodeScalars.count)
+
+        let wipe = pipeline.handleDelete()
+        XCTAssertEqual(wipe.backspace, wipeLen)
+        XCTAssertEqual(wipe.text, "")
+        XCTAssertTrue(wipe.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+        XCTAssertEqual(pipeline.provisionalText, "")
+
+        _ = typeASCII("tie6ng1")
+        XCTAssertEqual(pipeline.provisionalText, "tiếng")
+
+        let commit = pipeline.handleBreak(sc(" "))
+        XCTAssertEqual(commit.backspace, 0)
+        XCTAssertEqual(commit.text, "")
+        XCTAssertFalse(commit.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+    }
+
+    func testDeleteAfterCommitIsPassthroughAndCoreClean() {
+        _ = typeASCII("tieengs")
+        let commit = pipeline.handleBreak(sc(" "))
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+        XCTAssertFalse(commit.consumeOriginal)
+
+        // After commit, Delete is not a compose wipe — app receives the real key.
+        let del = pipeline.handleDelete()
+        XCTAssertEqual(del, .passthrough)
+        XCTAssertFalse(del.consumeOriginal)
+        XCTAssertEqual(del.backspace, 0)
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+
+        // Core must not revive the previous word.
+        let next = pipeline.handlePrintable(sc("a"))
+        XCTAssertEqual(next.backspace, 0)
+        XCTAssertEqual(next.text, "a")
+        XCTAssertEqual(pipeline.provisionalText, "a")
+    }
+
+    func testForwardDeleteWhileComposingWipesSameAsBackspace() {
+        _ = typeASCII("tieengs")
+        let len = pipeline.provisionalLength
+        let key = ClassifiedKey(
+            kind: .delete,
+            keyCode: KeyClassifier.KeyCode.forwardDelete,
+            isRepeat: false,
+            shiftHeld: false
+        )
+        let r = pipeline.handleClassified(key)
+        XCTAssertTrue(r.consumeOriginal)
+        XCTAssertEqual(r.backspace, len)
+        XCTAssertEqual(r.text, "")
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+    }
+
+    func testDeleteRepeatAfterWipeIsPassthroughNoDoubleWipe() {
+        _ = typeASCII("aa")
+        XCTAssertEqual(pipeline.provisionalText, "â")
+        let first = pipeline.handleClassified(
+            ClassifiedKey(
+                kind: .delete,
+                keyCode: KeyClassifier.KeyCode.delete,
+                isRepeat: false,
+                shiftHeld: false
+            )
+        )
+        XCTAssertTrue(first.consumeOriginal)
+        XCTAssertEqual(first.backspace, 1)
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+
+        // Autorepeat while holding Delete after wipe: no second provisional wipe inject.
+        let repeated = pipeline.handleClassified(
+            ClassifiedKey(
+                kind: .delete,
+                keyCode: KeyClassifier.KeyCode.delete,
+                isRepeat: true,
+                shiftHeld: false
+            )
+        )
+        XCTAssertEqual(repeated, .passthrough)
+        XCTAssertEqual(repeated.backspace, 0)
+        XCTAssertFalse(repeated.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+    }
+
+    func testCmdVBoundaryResetsComposeAndPassthrough() {
+        _ = typeASCII("tieengs")
+        XCTAssertEqual(pipeline.provisionalText, "tiếng")
+        // Classifier maps Cmd+V → .other → pipeline boundary (reset + forward).
+        let cmdV = ClassifiedKey(
+            kind: .other,
+            keyCode: 9, // kVK_ANSI_V
+            isRepeat: false,
+            shiftHeld: false
+        )
+        let r = pipeline.handleClassified(cmdV)
+        XCTAssertEqual(r, .passthrough)
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+        XCTAssertEqual(pipeline.provisionalText, "")
+        // No inject of old provisional text on shortcut boundary.
+        XCTAssertEqual(r.backspace, 0)
+        XCTAssertEqual(r.text, "")
+
+        let next = pipeline.handlePrintable(sc("a"))
+        XCTAssertEqual(next.backspace, 0)
+        XCTAssertEqual(next.text, "a")
+    }
+
+    func testCmdDeleteBoundaryDoesNotWipeAsComposeDelete() {
+        _ = typeASCII("tieengs")
+        let len = pipeline.provisionalLength
+        XCTAssertGreaterThan(len, 0)
+        // Cmd+Delete is shortcut boundary, not first-class compose wipe.
+        let key = ClassifiedKey(
+            kind: .other,
+            keyCode: KeyClassifier.KeyCode.delete,
+            isRepeat: false,
+            shiftHeld: false
+        )
+        let r = pipeline.handleClassified(key)
+        XCTAssertEqual(r, .passthrough)
+        XCTAssertEqual(r.backspace, 0, "must not inject whole-provisional wipe for Cmd+Delete")
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+    }
+
+    func testDeleteThenMethodSwitchStartsFreshWord() {
+        _ = typeASCII("tieengs")
+        _ = pipeline.handleDelete()
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+
+        bridge.setMethod(DauMethod_Vni)
+        _ = typeASCII("tie6ng1")
+        XCTAssertEqual(pipeline.provisionalText, "tiếng")
+        XCTAssertEqual(pipeline.provisionalLength, "tiếng".unicodeScalars.count)
+    }
+
     // MARK: - None while composing (P0)
 
     func testNoneWhileComposingWipesViaDisabledEngine() {
