@@ -41,6 +41,7 @@
 		DAU00001000000000000079 /* focus-change-observer.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000074 /* focus-change-observer.swift */; };
 		DAU0000100000000000007A /* injection-profile-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000075 /* injection-profile-tests.swift */; };
 		DAU0000100000000000007B /* profiles.toml in Resources */ = {isa = PBXBuildFile; fileRef = DAU0000200000000000007B /* profiles.toml */; };
+		DAU0000100000000000007C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DAU0000200000000000007C /* Assets.xcassets */; };
 
 		DAU00001000000000000080 /* dau-app.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000080 /* dau-app.swift */; };
 		DAU00001000000000000081 /* app-delegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000081 /* app-delegate.swift */; };
@@ -94,6 +95,7 @@
 		DAU00002000000000000074 /* focus-change-observer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "focus-change-observer.swift"; sourceTree = "<group>"; };
 		DAU00002000000000000075 /* injection-profile-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "injection-profile-tests.swift"; sourceTree = "<group>"; };
 		DAU0000200000000000007B /* profiles.toml */ = {isa = PBXFileReference; lastKnownFileType = text; path = profiles.toml; sourceTree = "<group>"; };
+		DAU0000200000000000007C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DAU00002000000000000080 /* dau-app.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "dau-app.swift"; sourceTree = "<group>"; };
 		DAU00002000000000000081 /* app-delegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "app-delegate.swift"; sourceTree = "<group>"; };
 		DAU00002000000000000082 /* app-state.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "app-state.swift"; sourceTree = "<group>"; };
@@ -189,6 +191,7 @@
 				DAU00002000000000000004 /* Dau.entitlements.dev */,
 				DAU00002000000000000005 /* Dau.entitlements.production */,
 				DAU0000200000000000007B /* profiles.toml */,
+				DAU0000200000000000007C /* Assets.xcassets */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -347,6 +350,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				DAU0000100000000000007B /* profiles.toml in Resources */,
+				DAU0000100000000000007C /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -540,6 +544,7 @@
 		DAU00013000000000000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Resources/Dau.entitlements.dev;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
@@ -591,6 +596,7 @@
 		DAU00013000000000000002 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Resources/Dau.entitlements.production;
 				CODE_SIGN_IDENTITY = "-";
 				/* Prevent Xcode from injecting get-task-allow on ad-hoc Release. */
