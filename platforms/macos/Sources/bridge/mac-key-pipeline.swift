@@ -101,7 +101,8 @@ final class MacKeyPipeline {
     func handleClassified(_ key: ClassifiedKey) -> BridgeResult {
         switch key.kind {
         case .printable(let scalar):
-            return handlePrintable(scalar, caps: false)
+            // Shift held → uppercase for auto-cap / Telex capital letters.
+            return handlePrintable(scalar, caps: key.shiftHeld)
         case .breakKey(let scalar):
             return handleBreak(scalar)
         case .escape:

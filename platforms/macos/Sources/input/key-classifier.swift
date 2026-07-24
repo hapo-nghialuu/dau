@@ -194,7 +194,13 @@ enum KeyClassifier {
             return withKind(base, .breakKey(brk))
         }
 
-        if let scalar = singleScalar(from: input.characters) {
+        // Prefer unicode from the event; CGEventTap often leaves this empty — fall back to keyCode map.
+        let resolvedChars =
+            input.characters.isEmpty
+            ? (charactersFromKeyCode(input.keyCode, shift: input.shift) ?? "")
+            : input.characters
+
+        if let scalar = singleScalar(from: resolvedChars) {
             if isBreakScalar(scalar) {
                 return withKind(base, .breakKey(scalar))
             }
@@ -288,5 +294,40 @@ enum KeyClassifier {
         )
         guard length > 0 else { return nil }
         return String(utf16CodeUnits: buffer, count: Int(length))
+    }
+
+    /// ANSI / ISO-ish virtual key → character when `keyboardGetUnicodeString` is empty.
+    /// Covers US/ABC QWERTY used for Telex/VNI ASCII keys (gonhanh-class EventTap path).
+    private static func charactersFromKeyCode(_ keyCode: UInt16, shift: Bool) -> String? {
+        // Letter keys a–z (ANSI positions).
+        let letters: [UInt16: Character] = [
+            0: "a", 11: "b", 8: "c", 2: "d", 14: "e", 3: "f", 5: "g", 4: "h",
+            34: "i", 38: "j", 40: "k", 37: "l", 46: "m", 45: "n", 31: "o",
+            35: "p", 12: "q", 15: "r", 1: "s", 17: "t", 32: "u", 9: "v",
+            13: "w", 7: "x", 16: "y", 6: "z",
+        ]
+        if let ch = letters[keyCode] {
+            let s = String(ch)
+            return shift ? s.uppercased() : s
+        }
+        // Digits / shifted symbols (VNI needs 1–9, 0).
+        let digits: [UInt16: (Character, Character)] = [
+            18: ("1", "!"), 19: ("2", "@"), 20: ("3", "#"), 21: ("4", "$"),
+            23: ("5", "%"), 22: ("6", "^"), 26: ("7", "&"), 28: ("8", "*"),
+            25: ("9", "("), 29: ("0", ")"),
+        ]
+        if let pair = digits[keyCode] {
+            return String(shift ? pair.1 : pair.0)
+        }
+        // Common punctuation (ANSI).
+        let punct: [UInt16: (Character, Character)] = [
+            27: ("-", "_"), 24: ("=", "+"), 33: ("[", "{"), 30: ("]", "}"),
+            42: ("\\", "|"), 41: (";", ":"), 39: ("'", "\""), 43: (",", "<"),
+            47: (".", ">"), 44: ("/", "?"), 50: ("`", "~"),
+        ]
+        if let pair = punct[keyCode] {
+            return String(shift ? pair.1 : pair.0)
+        }
+        return nil
     }
 }

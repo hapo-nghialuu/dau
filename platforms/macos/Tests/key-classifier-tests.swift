@@ -281,4 +281,42 @@ final class KeyClassifierTests: XCTestCase {
         )
         XCTAssertEqual(key.kind, .printable(sc("1")))
     }
+
+    /// CGEventTap often yields empty unicode; keyCode map must still produce printable Telex keys.
+    func testEmptyUnicodeFallsBackToKeyCodeMap() {
+        // keyCode 17 = "t" on ANSI US
+        let t = KeyClassifier.classify(KeyClassifierInput(
+            keyCode: 17,
+            characters: "",
+            shift: false
+        ))
+        if case .printable(let s) = t.kind {
+            XCTAssertEqual(s, "t")
+        } else {
+            XCTFail("expected printable t, got \(t.kind)")
+        }
+
+        let sKey = KeyClassifier.classify(KeyClassifierInput(
+            keyCode: 1,
+            characters: "",
+            shift: false
+        ))
+        if case .printable(let s) = sKey.kind {
+            XCTAssertEqual(s, "s")
+        } else {
+            XCTFail("expected printable s, got \(sKey.kind)")
+        }
+
+        let digit = KeyClassifier.classify(KeyClassifierInput(
+            keyCode: 18,
+            characters: "",
+            shift: false
+        ))
+        if case .printable(let s) = digit.kind {
+            XCTAssertEqual(s, "1")
+        } else {
+            XCTFail("expected printable 1 for VNI, got \(digit.kind)")
+        }
+    }
+
 }
