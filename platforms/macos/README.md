@@ -29,7 +29,7 @@ platforms/macos/
 │   ├── config/             # injection profiles + resolver
 │   ├── input/              # EventTap, classifier, focus, input-source
 │   ├── output/             # TextInjector, methods, AX helpers
-│   └── ui/                 # menu bar, Accessibility onboarding
+│   └── ui/                 # menu bar, onboarding, minimal settings (SET-06)
 ├── Support/dau-bridging-header.h
 ├── Resources/
 │   ├── Info.plist, entitlements, profiles.toml
@@ -221,6 +221,24 @@ Accessibility = **TCC user grant**, không phải entitlement.
 ## Bundle id (placeholder)
 
 `io.github.hapo-nghialuu.dau` — đổi chỉ khi release-owner OK (TCC re-auth).
+
+## Settings window (SET-06)
+
+Menu **Cài đặt…** (`⌘,`) mở cửa sổ **700×480**, sidebar + content:
+
+| Sidebar | Nội dung |
+|---------|----------|
+| **Cài đặt** | Bộ gõ (VI/EN, Telex/VNI), phím tắt bật/tắt (recorder), quy tắc (auto-restore, auto-cap), Accessibility status |
+| **Nâng cao** | App phía trước + resolved profile; preset delay Nhanh/Vừa/Chậm → user override |
+| **Giới thiệu** | Logo, version/core, privacy, link GitHub |
+
+Prefs: `dau.settings.{typingEnabled,engineMethod,autoRestore,autoCapitalize,toggleHotkey}` (+ optional `launchAtLoginDesired` reserved).
+
+**Phím tắt bật/tắt (VI/EN):** mặc định `⇧⌘E` (Cmd+Shift+E). Cấu hình trong **Cài đặt → Phím tắt → Đổi…** (cần ≥1 trong ⌘/⌃/⌥). Global qua Carbon `RegisterEventHotKey` (menu đóng vẫn chạy). Menu header + tooltip hiển thị tổ hợp hiện tại; `NSMenuItem` keyEquivalent cập nhật theo shortcut.
+
+Không gồm: update checker, full inject matrix UI, conflict matrix với system shortcuts.
+
+Mở: menu bar → **Cài đặt…** hoặc **Giới thiệu** (About page).
 
 ## Out of scope (sau smoke)
 
