@@ -40,6 +40,19 @@ pub fn should_auto_restore(
     !is_valid_committed_syllable(buf)
 }
 
+/// Keep explicitly supported Telex undo sequences after English auto-restore.
+///
+/// The raw keystrokes alone cannot distinguish deliberate undo (`tesst` →
+/// `test`) from genuine doubled English letters (`coffee`, `errs`, `cliffs`).
+/// Keep this list conservative until a real English lexicon is available.
+pub fn should_keep_explicit_telex_revert(raw: &str, display: &str) -> bool {
+    const REVERTS: &[(&str, &str)] = &[("tesst", "test")];
+
+    REVERTS.iter().any(|(typed, shown)| {
+        raw.eq_ignore_ascii_case(typed) && display.eq_ignore_ascii_case(shown)
+    })
+}
+
 /// Longest exact shortcut match for `raw` (case-insensitive key compare).
 pub fn match_shortcut<'a>(raw: &str, pairs: &'a [(String, String)]) -> Option<&'a str> {
     let mut best: Option<&(String, String)> = None;

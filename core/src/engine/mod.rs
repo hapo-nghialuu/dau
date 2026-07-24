@@ -12,7 +12,10 @@ mod vni;
 
 use crate::config::Config;
 use buffer::{Buffer, CompChar};
-use ux::{is_restore_break, is_sentence_end, match_shortcut, should_auto_restore};
+use ux::{
+    is_restore_break, is_sentence_end, match_shortcut, should_auto_restore,
+    should_keep_explicit_telex_revert,
+};
 
 pub use ux::BreakOutput;
 
@@ -210,6 +213,7 @@ impl Engine {
         if self.raw_keys.is_empty() && self.buffer.is_empty() {
             return String::new();
         }
+        let display = self.buffer.display();
 
         // 1) Shortcuts (before auto-restore), exact match on raw, longest key.
         if let Some(exp) = match_shortcut(&self.raw_keys, &self.shortcuts) {
@@ -225,7 +229,11 @@ impl Engine {
                 self.pass_through,
             )
         {
-            return self.raw_keys.clone();
+            if self.method != Method::Telex
+                || !should_keep_explicit_telex_revert(&self.raw_keys, &display)
+            {
+                return self.raw_keys.clone();
+            }
         }
 
         // 3) After ESC pass-through, commit raw (buffer already mirrors raw).
@@ -234,7 +242,7 @@ impl Engine {
         }
 
         // 4) Keep composed Vietnamese (or plain display).
-        self.buffer.display()
+        display
     }
 
     fn reset_word_state(&mut self) {
@@ -246,5 +254,8 @@ impl Engine {
 
 #[cfg(test)]
 mod evidence_tests;
+#[cfg(test)]
+#[path = "manual-revert-tests.rs"]
+mod manual_revert_tests;
 #[cfg(test)]
 mod ux_tests;
