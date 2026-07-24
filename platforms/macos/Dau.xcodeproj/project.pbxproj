@@ -57,6 +57,9 @@
 		DAU00001000000000000090 /* typing-session.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000090 /* typing-session.swift */; };
 		DAU00001000000000000091 /* typing-session.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000090 /* typing-session.swift */; };
 		DAU00001000000000000092 /* typing-session-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000092 /* typing-session-tests.swift */; };
+		DAU00001000000000000093 /* settings-view.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000093 /* settings-view.swift */; };
+		DAU00001000000000000094 /* launch-at-login.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000094 /* launch-at-login.swift */; };
+		DAU00001000000000000095 /* launch-at-login.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000094 /* launch-at-login.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -109,6 +112,8 @@
 
 		DAU00002000000000000090 /* typing-session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "typing-session.swift"; sourceTree = "<group>"; };
 		DAU00002000000000000092 /* typing-session-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "typing-session-tests.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000093 /* settings-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "settings-view.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000094 /* launch-at-login.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "launch-at-login.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -249,6 +254,7 @@
 				DAU00002000000000000070 /* injection-profile.swift */,
 				DAU00002000000000000071 /* injection-profile-store.swift */,
 				DAU00002000000000000072 /* injection-profile-resolver.swift */,
+				DAU00002000000000000094 /* launch-at-login.swift */,
 			);
 			path = config;
 			sourceTree = "<group>";
@@ -258,6 +264,7 @@
 			children = (
 				DAU00002000000000000083 /* menu-bar-controller.swift */,
 				DAU00002000000000000084 /* onboarding-view.swift */,
+				DAU00002000000000000093 /* settings-view.swift */,
 			);
 			path = ui;
 			sourceTree = "<group>";
@@ -380,6 +387,8 @@
 				DAU00001000000000000085 /* input-source-observer.swift in Sources */,
 				DAU00001000000000000083 /* menu-bar-controller.swift in Sources */,
 				DAU00001000000000000084 /* onboarding-view.swift in Sources */,
+				DAU00001000000000000093 /* settings-view.swift in Sources */,
+				DAU00001000000000000094 /* launch-at-login.swift in Sources */,
 				DAU00001000000000000090 /* typing-session.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -411,6 +420,7 @@
 				DAU00001000000000000089 /* input-source-observer-tests.swift in Sources */,
 				DAU00001000000000000091 /* typing-session.swift in Sources */,
 				DAU00001000000000000092 /* typing-session-tests.swift in Sources */,
+				DAU00001000000000000095 /* launch-at-login.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

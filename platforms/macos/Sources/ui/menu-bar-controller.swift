@@ -14,6 +14,11 @@ final class MenuBarController: NSObject {
     var onSelectVNI: (() -> Void)?
     var onOpenAccessibilitySettings: (() -> Void)?
     var onRestartTap: (() -> Void)?
+    /// Opens settings window (SET-06). Not onboarding.
+    var onShowSettings: (() -> Void)?
+    /// Opens settings on Giới thiệu page.
+    var onShowAbout: (() -> Void)?
+    /// Optional first-run guide (kept for recovery; not the main Cài đặt entry).
     var onShowOnboarding: (() -> Void)?
     var onQuit: (() -> Void)?
 
@@ -175,14 +180,26 @@ final class MenuBarController: NSObject {
         restart.target = self
         menu.addItem(restart)
 
-        // Minimal settings: onboarding / permission guide (no full settings window).
+        // SET-06: real settings window (not onboarding).
         let settings = NSMenuItem(
             title: "Cài đặt…",
-            action: #selector(handleOnboarding),
-            keyEquivalent: ""
+            action: #selector(handleSettings),
+            keyEquivalent: ","
         )
+        settings.keyEquivalentModifierMask = [.command]
         settings.target = self
         menu.addItem(settings)
+
+        // Keep recovery path for Accessibility guide when setup is incomplete.
+        if !state.isReadyToType {
+            let setup = NSMenuItem(
+                title: "Thiết lập quyền…",
+                action: #selector(handleOnboarding),
+                keyEquivalent: ""
+            )
+            setup.target = self
+            menu.addItem(setup)
+        }
 
         menu.addItem(.separator())
 
@@ -214,9 +231,15 @@ final class MenuBarController: NSObject {
     @objc private func handleVNI() { onSelectVNI?() }
     @objc private func handleAccessibility() { onOpenAccessibilitySettings?() }
     @objc private func handleRestartTap() { onRestartTap?() }
+    @objc private func handleSettings() { onShowSettings?() }
     @objc private func handleOnboarding() { onShowOnboarding?() }
 
     @objc private func handleAbout() {
+        if let onShowAbout {
+            onShowAbout()
+            return
+        }
+        // Fallback: standard About panel.
         var options: [NSApplication.AboutPanelOptionKey: Any] = [:]
         options[.applicationName] = "Dấu"
         if let marketing = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
@@ -225,7 +248,6 @@ final class MenuBarController: NSObject {
         if let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
             options[.applicationVersion] = build
         }
-        // Prefer app icon from catalog / bundle; fall back to AppLogo.
         if let icon = NSApp.applicationIconImage {
             options[.applicationIcon] = icon
         } else if let logo = NSImage(named: "AppLogo") {

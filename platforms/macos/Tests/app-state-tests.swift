@@ -200,4 +200,58 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(AppEngineMethod.telex.asOverride, .telex)
         XCTAssertEqual(AppEngineMethod.vni.asOverride, .vni)
     }
+
+    // MARK: - SET-06 preferences persistence
+
+    func testDefaultsWhenKeysMissing() {
+        let suite = "io.github.hapo-nghialuu.dau.tests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("suite")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        let state = AppState(defaults: defaults)
+        XCTAssertTrue(state.typingEnabled)
+        XCTAssertEqual(state.engineMethod, .telex)
+        XCTAssertTrue(state.autoRestore)
+        XCTAssertFalse(state.autoCapitalize)
+        XCTAssertFalse(state.launchAtLoginDesired)
+        XCTAssertEqual(AppState.toggleShortcutDisplay, "⌘⇧E")
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testPersistsAndReloadsPreferences() {
+        let suite = "io.github.hapo-nghialuu.dau.tests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("suite")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+
+        let writer = AppState(defaults: defaults)
+        writer.typingEnabled = false
+        writer.engineMethod = .vni
+        writer.autoRestore = false
+        writer.autoCapitalize = true
+        writer.launchAtLoginDesired = true
+
+        let reader = AppState(defaults: defaults)
+        XCTAssertFalse(reader.typingEnabled)
+        XCTAssertEqual(reader.engineMethod, .vni)
+        XCTAssertFalse(reader.autoRestore)
+        XCTAssertTrue(reader.autoCapitalize)
+        XCTAssertTrue(reader.launchAtLoginDesired)
+
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testMenuHeaderSubtitleUsesSharedShortcutConstant() {
+        let suite = "io.github.hapo-nghialuu.dau.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let state = AppState(defaults: defaults)
+        state.engineMethod = .telex
+        XCTAssertEqual(state.menuHeaderSubtitle, "Telex · \(AppState.toggleShortcutDisplay)")
+        defaults.removePersistentDomain(forName: suite)
+    }
 }

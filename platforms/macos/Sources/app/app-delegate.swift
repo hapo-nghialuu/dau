@@ -22,6 +22,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let inputSourceObserver = InputSourceObserver()
     private lazy var menuBar = MenuBarController(state: state)
     private lazy var onboarding = OnboardingController(state: state)
+    private lazy var settings = SettingsController(
+        state: state,
+        profileStore: profileStore,
+        profileResolver: profileResolver,
+        contextResolver: contextResolver
+    )
 
     /// Cached resolution mirrored into TypingSession on focus/settings change.
     private var cachedSettings: ResolvedInjectionSettings = ResolvedInjectionSettings(
@@ -86,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         wireMenuBar()
         wireOnboarding()
+        wireSettings()
         menuBar.start()
 
         startAXPolling()
@@ -107,6 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         inputSourceObserver.stop()
         menuBar.stop()
         onboarding.close()
+        settings.close()
         typingSession.resetCompose()
     }
 
@@ -144,11 +152,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func applyEngineFlags() {
         // Core flags via session queue wrappers (never touch pipeline off-queue).
+        // Master engine stays enabled; VI/EN is `typingEnabled` at the session gate.
         typingSession.setEnabled(true)
         typingSession.setMethod(state.engineMethod.asDauMethod)
-        typingSession.setAutoRestore(true)
-        // Global default: auto-cap off (terminal north star).
-        typingSession.setAutoCapitalize(false)
+        typingSession.setAutoRestore(state.autoRestore)
+        typingSession.setAutoCapitalize(state.autoCapitalize)
     }
 
     // MARK: - Tap / AX
@@ -256,6 +264,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBar.onRestartTap = { [weak self] in
             self?.restartTap()
         }
+        menuBar.onShowSettings = { [weak self] in
+            self?.settings.show(page: .general)
+        }
+        menuBar.onShowAbout = { [weak self] in
+            self?.settings.show(page: .about)
+        }
         menuBar.onShowOnboarding = { [weak self] in
             self?.onboarding.show()
         }
@@ -273,6 +287,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         onboarding.onRetryTap = { [weak self] in
             self?.restartTap()
+        }
+    }
+
+    private func wireSettings() {
+        settings.onToggleTyping = { [weak self] in
+            self?.toggleTyping()
+        }
+        settings.onSelectMethod = { [weak self] method in
+            self?.setEngineMethod(method)
+        }
+        settings.onAutoRestoreChanged = { [weak self] on in
+            guard let self else { return }
+            self.state.autoRestore = on
+            self.typingSession.resetCompose()
+            self.applyEngineFlags()
+            self.syncUI()
+        }
+        settings.onAutoCapitalizeChanged = { [weak self] on in
+            guard let self else { return }
+            self.state.autoCapitalize = on
+            self.applyEngineFlags()
+            self.syncUI()
+        }
+        settings.onOpenAccessibilitySettings = { [weak self] in
+            self?.openAccessibilitySettings()
+        }
+        settings.onOpenAccessibilityGuide = { [weak self] in
+            self?.onboarding.show()
+        }
+        settings.onProfilesChanged = { [weak self] in
+            self?.refreshProfileCache()
+            self?.syncUI()
+        }
+        settings.onWindowDidClose = { [weak self] in
+            // Ensure accessory policy even if user closed via red traffic light.
+            NSApp.setActivationPolicy(.accessory)
+            self?.syncUI()
         }
     }
 
@@ -297,10 +348,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if Thread.isMainThread {
             menuBar.refresh()
             onboarding.refreshStatus()
+            settings.refresh()
         } else {
             DispatchQueue.main.async { [weak self] in
                 self?.menuBar.refresh()
                 self?.onboarding.refreshStatus()
+                self?.settings.refresh()
             }
         }
     }

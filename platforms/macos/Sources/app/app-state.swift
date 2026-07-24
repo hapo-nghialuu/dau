@@ -1,5 +1,5 @@
-// Dấu macOS — published app settings / runtime status (WP-06 / MENU-02).
-// UI (menu bar / onboarding) observes this; does not own the event-tap callback.
+// Dấu macOS — published app settings / runtime status (WP-06 / MENU-02 / SET-06).
+// UI (menu bar / onboarding / settings) observes this; does not own the event-tap callback.
 
 import Combine
 import Foundation
@@ -50,13 +50,45 @@ enum MenuBarIconState: String, Sendable, Equatable, CaseIterable {
     }
 }
 
-/// Shared observable state for menu bar + onboarding. Thread: main queue for mutations.
+/// UserDefaults keys for SET-06 persisted preferences.
+enum DauSettingsKey {
+    static let typingEnabled = "dau.settings.typingEnabled"
+    static let engineMethod = "dau.settings.engineMethod"
+    static let autoRestore = "dau.settings.autoRestore"
+    static let autoCapitalize = "dau.settings.autoCapitalize"
+    /// Last user intent for launch-at-login (actual status still from SMAppService).
+    static let launchAtLoginDesired = "dau.settings.launchAtLoginDesired"
+}
+
+/// Shared observable state for menu bar + onboarding + settings. Thread: main queue for mutations.
 final class AppState: ObservableObject {
+    private let defaults: UserDefaults
+    private var suppressPersist = false
+
     /// VI = true (typing on), EN = false (passthrough). Toggle clears compose via AppDelegate.
-    @Published var typingEnabled: Bool = true
+    @Published var typingEnabled: Bool {
+        didSet { persistBool(typingEnabled, key: DauSettingsKey.typingEnabled) }
+    }
 
     /// Global Telex / VNI (per-app override can still change engine method at resolve time).
-    @Published var engineMethod: AppEngineMethod = .telex
+    @Published var engineMethod: AppEngineMethod {
+        didSet { persistString(engineMethod.rawValue, key: DauSettingsKey.engineMethod) }
+    }
+
+    /// English auto-restore on word break (core `dau_set_auto_restore`).
+    @Published var autoRestore: Bool {
+        didSet { persistBool(autoRestore, key: DauSettingsKey.autoRestore) }
+    }
+
+    /// Auto-capitalize after sentence end (core `dau_set_auto_capitalize`). Default off.
+    @Published var autoCapitalize: Bool {
+        didSet { persistBool(autoCapitalize, key: DauSettingsKey.autoCapitalize) }
+    }
+
+    /// Last desired launch-at-login from settings UI (not SMAppService truth).
+    @Published var launchAtLoginDesired: Bool {
+        didSet { persistBool(launchAtLoginDesired, key: DauSettingsKey.launchAtLoginDesired) }
+    }
 
     /// TCC Accessibility trust (not an entitlement).
     @Published var accessibilityTrusted: Bool = false
@@ -69,6 +101,29 @@ final class AppState: ObservableObject {
 
     /// Human-readable status line for menu (no key/text content).
     @Published var statusDetail: String = ""
+
+    /// Fixed toggle shortcut display (recorder is out of SET-06 scope).
+    static let toggleShortcutDisplay = "⌘⇧E"
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        suppressPersist = true
+        typingEnabled = Self.loadBool(defaults, key: DauSettingsKey.typingEnabled, default: true)
+        if let raw = defaults.string(forKey: DauSettingsKey.engineMethod),
+           let method = AppEngineMethod(rawValue: raw) {
+            engineMethod = method
+        } else {
+            engineMethod = .telex
+        }
+        autoRestore = Self.loadBool(defaults, key: DauSettingsKey.autoRestore, default: true)
+        autoCapitalize = Self.loadBool(defaults, key: DauSettingsKey.autoCapitalize, default: false)
+        launchAtLoginDesired = Self.loadBool(
+            defaults,
+            key: DauSettingsKey.launchAtLoginDesired,
+            default: false
+        )
+        suppressPersist = false
+    }
 
     /// Bundle version string for About.
     var versionLabel: String {
@@ -145,13 +200,32 @@ final class AppState: ObservableObject {
         return "Accessibility: chưa cấp quyền…"
     }
 
-    /// Header subtitle: current method + optional toggle shortcut hint.
+    /// Header subtitle: current method + toggle shortcut hint.
     var menuHeaderSubtitle: String {
-        "\(engineMethod.menuLabel) · ⌘⇧E"
+        "\(engineMethod.menuLabel) · \(Self.toggleShortcutDisplay)"
     }
 
     /// True when user has granted Accessibility and the keyboard listener is up.
     var isReadyToType: Bool {
         accessibilityTrusted && eventTapRunning
+    }
+
+    // MARK: - Persistence helpers
+
+    private static func loadBool(_ defaults: UserDefaults, key: String, default def: Bool) -> Bool {
+        if defaults.object(forKey: key) == nil {
+            return def
+        }
+        return defaults.bool(forKey: key)
+    }
+
+    private func persistBool(_ value: Bool, key: String) {
+        guard !suppressPersist else { return }
+        defaults.set(value, forKey: key)
+    }
+
+    private func persistString(_ value: String, key: String) {
+        guard !suppressPersist else { return }
+        defaults.set(value, forKey: key)
     }
 }
