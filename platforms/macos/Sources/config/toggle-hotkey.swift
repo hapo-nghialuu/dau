@@ -66,9 +66,17 @@ struct ToggleHotkey: Equatable, Sendable, Codable {
     }
 
     /// Build from a key-down event; returns `nil` if invalid for a global toggle.
+    ///
+    /// Uses `deviceIndependentFlagsMask` so ⌘⇧ / ⌃⇧ combos are not dropped
+    /// (device-dependent bits otherwise break `.contains(.shift)` / `.command`).
     static func fromKeyDownEvent(_ event: NSEvent) -> ToggleHotkey? {
         guard event.type == .keyDown else { return nil }
-        let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        if isPureModifier(UInt16(event.keyCode)) {
+            return nil
+        }
+        let flags = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .intersection([.command, .control, .option, .shift])
         let hotkey = ToggleHotkey(
             keyCode: UInt16(event.keyCode),
             command: flags.contains(.command),
@@ -77,6 +85,19 @@ struct ToggleHotkey: Equatable, Sendable, Codable {
             shift: flags.contains(.shift)
         )
         return hotkey.isValid ? hotkey : nil
+    }
+
+    /// Live modifier-only preview while recording (no key yet).
+    static func modifiersDisplay(from event: NSEvent) -> String {
+        let flags = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .intersection([.command, .control, .option, .shift])
+        var s = ""
+        if flags.contains(.control) { s += "⌃" }
+        if flags.contains(.option) { s += "⌥" }
+        if flags.contains(.shift) { s += "⇧" }
+        if flags.contains(.command) { s += "⌘" }
+        return s.isEmpty ? "…" : s
     }
 
     // MARK: - Labels / menu chars

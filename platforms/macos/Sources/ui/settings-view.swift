@@ -7,9 +7,12 @@ import SwiftUI
 
 // MARK: - Toggle hotkey recorder
 
-/// Local keyDown capture while Settings is key window (Esc = cancel).
+/// Local key capture while Settings is key window (Esc = cancel).
+/// Listens to both `keyDown` and `flagsChanged` so ⌘⇧ combos are reliable.
 final class ToggleHotkeyRecorder: ObservableObject {
     @Published private(set) var isRecording = false
+    /// Live preview while holding modifiers (e.g. `⇧⌘`) before the letter key.
+    @Published private(set) var livePreview: String = "…"
 
     private var monitor: Any?
     private var onCapture: ((ToggleHotkey) -> Void)?
@@ -24,8 +27,18 @@ final class ToggleHotkeyRecorder: ObservableObject {
         self.onCapture = onCapture
         self.onCancel = onCancel
         isRecording = true
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        livePreview = "…"
+        let mask: NSEvent.EventTypeMask = [.keyDown, .flagsChanged]
+        monitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
             guard let self else { return event }
+
+            if event.type == .flagsChanged {
+                self.livePreview = ToggleHotkey.modifiersDisplay(from: event)
+                return nil
+            }
+
+            guard event.type == .keyDown else { return event }
+
             // Escape cancels without changing the hotkey.
             if event.keyCode == 53 {
                 self.finishCancel()
@@ -35,12 +48,17 @@ final class ToggleHotkeyRecorder: ObservableObject {
                 let captured = self.onCapture
                 self.tearDownMonitor()
                 self.isRecording = false
+                self.livePreview = "…"
                 self.onCapture = nil
                 self.onCancel = nil
                 captured?(hotkey)
                 return nil
             }
-            // Invalid combo (e.g. bare letter): keep listening, swallow key.
+            // Invalid (e.g. bare letter without ⌘/⌃/⌥): update hint, keep listening.
+            self.livePreview = ToggleHotkey.modifiersDisplay(from: event)
+            if self.livePreview == "…" {
+                self.livePreview = "Cần ⌘ / ⌃ / ⌥ + phím"
+            }
             return nil
         }
     }
@@ -54,6 +72,7 @@ final class ToggleHotkeyRecorder: ObservableObject {
         let cancel = onCancel
         tearDownMonitor()
         isRecording = false
+        livePreview = "…"
         onCapture = nil
         onCancel = nil
         cancel?()
@@ -620,14 +639,18 @@ struct SettingsGeneralPage: View {
                     .font(.system(size: 13))
                 Text(
                     hotkeyRecorder.isRecording
-                        ? "Nhấn tổ hợp phím… (Esc để huỷ · giữ phím cũ nếu huỷ)"
-                        : "Toàn cục (Carbon) · cần ⌘ / ⌃ / ⌥ + phím"
+                        ? "Nhấn ⌘/⌃/⌥ + phím (vd. ⇧⌘A). Esc = huỷ."
+                        : "Toàn cục · cần ⌘ / ⌃ / ⌥ + phím"
                 )
                 .font(.system(size: 11))
                 .foregroundStyle(hotkeyRecorder.isRecording ? Color.accentColor : .secondary)
             }
             Spacer(minLength: 8)
-            Text(state.toggleHotkey.displayString)
+            Text(
+                hotkeyRecorder.isRecording
+                    ? hotkeyRecorder.livePreview
+                    : state.toggleHotkey.displayString
+            )
                 .font(.system(size: 12, weight: .medium).monospaced())
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)

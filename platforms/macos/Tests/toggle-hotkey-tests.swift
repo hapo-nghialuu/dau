@@ -128,4 +128,11 @@ final class ToggleHotkeyTests: XCTestCase {
         )
         XCTAssertEqual(hk.carbonModifiers, UInt32(controlKey))
     }
+
+    func testCommandShiftAIsValid() {
+        let hk = ToggleHotkey(keyCode: 0, command: true, control: false, option: false, shift: true)
+        XCTAssertTrue(hk.isValid)
+        XCTAssertEqual(hk.displayString, "⇧⌘A")
+    }
+
 }
