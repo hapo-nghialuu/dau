@@ -72,19 +72,20 @@ final class MenuBarController: NSObject {
 
         button.title = ""
         button.imagePosition = .imageOnly
-        button.image = Self.templateImage(named: state.menuBarIconState.assetName)
+        button.image = Self.statusItemImage(named: state.menuBarIconState.assetName)
         button.toolTip = state.menuBarToolTip
         button.setAccessibilityLabel(state.menuBarAccessibilityLabel)
         button.setAccessibilityTitle(state.menuBarAccessibilityLabel)
     }
 
-    /// Load catalog image as template so menu bar light/dark tints correctly.
-    static func templateImage(named name: String) -> NSImage? {
+    /// Load catalog brand image in **original** colors (red logo), not template mono.
+    /// User request: menubar matches AppIcon / Linux brand (full color).
+    static func statusItemImage(named name: String) -> NSImage? {
         guard let image = NSImage(named: name) else {
             return nil
         }
-        image.isTemplate = true
-        // Keep status-item scale ~16–18 pt.
+        image.isTemplate = false
+        // Keep status-item scale ~18 pt; color logo stays legible on light/dark bars.
         let side: CGFloat = 18
         image.size = NSSize(width: side, height: side)
         return image
