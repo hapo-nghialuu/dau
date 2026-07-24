@@ -82,17 +82,9 @@ final class AppState: ObservableObject {
 
     /// Short badge on the status item next to the logo.
     /// - Ready + VI typing: **VI**
-    /// - Ready + EN / blocked: **EN**
-    /// - Not ready (no Accessibility or tap down): empty (logo only)
+    /// - Ready but EN / blocked / setup incomplete: empty (logo only) — user request
     var menuBarTitle: String {
-        switch menuBarIconState {
-        case .setup:
-            return ""
-        case .active:
-            return "VI"
-        case .inactive:
-            return "EN"
-        }
+        menuBarIconState == .active ? "VI" : ""
     }
 
     /// Icon state: setup before active VI; blocked/tap-failed never map to `.active`.

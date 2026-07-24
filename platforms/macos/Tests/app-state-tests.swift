@@ -94,19 +94,20 @@ final class AppStateTests: XCTestCase {
         XCTAssertTrue(state.isReadyToType)
     }
 
-    func testMenuBarTitleENWhenInactive() {
+    func testMenuBarTitleEmptyWhenInactiveEN() {
         let state = AppState()
         makeTrustedRunning(state: state)
         state.typingEnabled = false
-        XCTAssertEqual(state.menuBarTitle, "EN")
+        // User: only show VI when ready to type VN; EN/setup = logo only.
+        XCTAssertEqual(state.menuBarTitle, "")
     }
 
-    func testMenuBarTitleENWhenBlocked() {
+    func testMenuBarTitleEmptyWhenBlocked() {
         let state = AppState()
         makeTrustedRunning(state: state)
         state.typingEnabled = true
         state.inputSourceBlocked = true
-        XCTAssertEqual(state.menuBarTitle, "EN")
+        XCTAssertEqual(state.menuBarTitle, "")
     }
 
     // MARK: - toolTip / a11y labels
