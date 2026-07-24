@@ -58,6 +58,8 @@ enum DauSettingsKey {
     static let autoCapitalize = "dau.settings.autoCapitalize"
     /// Last user intent for launch-at-login (actual status still from SMAppService).
     static let launchAtLoginDesired = "dau.settings.launchAtLoginDesired"
+    /// JSON-encoded `ToggleHotkey` for global VI/EN shortcut.
+    static let toggleHotkey = "dau.settings.toggleHotkey"
 }
 
 /// Shared observable state for menu bar + onboarding + settings. Thread: main queue for mutations.
@@ -90,6 +92,14 @@ final class AppState: ObservableObject {
         didSet { persistBool(launchAtLoginDesired, key: DauSettingsKey.launchAtLoginDesired) }
     }
 
+    /// Global VI/EN toggle hotkey (Carbon RegisterEventHotKey; default ⇧⌘E).
+    @Published var toggleHotkey: ToggleHotkey {
+        didSet { persistToggleHotkey(toggleHotkey) }
+    }
+
+    /// True while settings UI is capturing a new hotkey (unregister global hotkey).
+    @Published var isRecordingToggleHotkey: Bool = false
+
     /// TCC Accessibility trust (not an entitlement).
     @Published var accessibilityTrusted: Bool = false
 
@@ -102,8 +112,11 @@ final class AppState: ObservableObject {
     /// Human-readable status line for menu (no key/text content).
     @Published var statusDetail: String = ""
 
-    /// Fixed toggle shortcut display (recorder is out of SET-06 scope).
-    static let toggleShortcutDisplay = "⌘⇧E"
+    /// Default display string (tests / fallback). Live UI uses `toggleShortcutDisplay`.
+    static let defaultToggleShortcutDisplay = ToggleHotkey.default.displayString
+
+    /// Current hotkey display for menu header / settings.
+    var toggleShortcutDisplay: String { toggleHotkey.displayString }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -122,6 +135,7 @@ final class AppState: ObservableObject {
             key: DauSettingsKey.launchAtLoginDesired,
             default: false
         )
+        toggleHotkey = Self.loadToggleHotkey(defaults)
         suppressPersist = false
     }
 
@@ -155,36 +169,38 @@ final class AppState: ObservableObject {
         return .active
     }
 
-    /// Hover / accessibility description (Vietnamese).
+    /// Hover / accessibility description (Vietnamese) — includes toggle shortcut.
     var menuBarToolTip: String {
+        let sc = toggleShortcutDisplay
         switch menuBarIconState {
         case .setup:
             if !accessibilityTrusted {
-                return "Dấu — cần cấp quyền Accessibility"
+                return "Dấu — cần cấp quyền Accessibility · bật/tắt \(sc)"
             }
-            return "Dấu — event tap chưa chạy"
+            return "Dấu — event tap chưa chạy · bật/tắt \(sc)"
         case .active:
-            return "Dấu — VI (đang gõ tiếng Việt)"
+            return "Dấu — VI (đang gõ tiếng Việt) · bật/tắt \(sc)"
         case .inactive:
             if inputSourceBlocked {
-                return "Dấu — EN (tạm tắt theo input source)"
+                return "Dấu — EN (tạm tắt theo input source) · bật/tắt \(sc)"
             }
-            return "Dấu — EN (tắt gõ tiếng Việt)"
+            return "Dấu — EN (tắt gõ tiếng Việt) · bật/tắt \(sc)"
         }
     }
 
     /// VoiceOver / accessibility label for the status item button.
     var menuBarAccessibilityLabel: String {
+        let sc = toggleShortcutDisplay
         switch menuBarIconState {
         case .setup:
-            return "Dấu — chưa sẵn sàng"
+            return "Dấu — chưa sẵn sàng · bật/tắt \(sc)"
         case .active:
-            return "Dấu — VI"
+            return "Dấu — VI · bật/tắt \(sc)"
         case .inactive:
             if inputSourceBlocked {
-                return "Dấu — EN, tạm tắt"
+                return "Dấu — EN, tạm tắt · bật/tắt \(sc)"
             }
-            return "Dấu — EN"
+            return "Dấu — EN · bật/tắt \(sc)"
         }
     }
 
@@ -202,7 +218,12 @@ final class AppState: ObservableObject {
 
     /// Header subtitle: current method + toggle shortcut hint.
     var menuHeaderSubtitle: String {
-        "\(engineMethod.menuLabel) · \(Self.toggleShortcutDisplay)"
+        "\(engineMethod.menuLabel) · \(toggleShortcutDisplay)"
+    }
+
+    /// Reset toggle hotkey to product default (⇧⌘E).
+    func resetToggleHotkeyToDefault() {
+        toggleHotkey = .default
     }
 
     /// True when user has granted Accessibility and the keyboard listener is up.
@@ -227,5 +248,24 @@ final class AppState: ObservableObject {
     private func persistString(_ value: String, key: String) {
         guard !suppressPersist else { return }
         defaults.set(value, forKey: key)
+    }
+
+    private static func loadToggleHotkey(_ defaults: UserDefaults) -> ToggleHotkey {
+        guard let data = defaults.data(forKey: DauSettingsKey.toggleHotkey) else {
+            return .default
+        }
+        guard let decoded = try? JSONDecoder().decode(ToggleHotkey.self, from: data),
+              decoded.isValid else {
+            return .default
+        }
+        return decoded
+    }
+
+    private func persistToggleHotkey(_ value: ToggleHotkey) {
+        guard !suppressPersist else { return }
+        guard value.isValid else { return }
+        if let data = try? JSONEncoder().encode(value) {
+            defaults.set(data, forKey: DauSettingsKey.toggleHotkey)
+        }
     }
 }

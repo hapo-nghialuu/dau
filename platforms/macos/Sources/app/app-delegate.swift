@@ -28,6 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         profileResolver: profileResolver,
         contextResolver: contextResolver
     )
+    /// Global VI/EN hotkey (Carbon). Separate from EventTap compose path.
+    private let toggleHotkeyRegistrar = ToggleHotkeyRegistrar()
 
     /// Cached resolution mirrored into TypingSession on focus/settings change.
     private var cachedSettings: ResolvedInjectionSettings = ResolvedInjectionSettings(
@@ -59,11 +61,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.typingSession.resetCompose()
         }
         // P0-2: only TypingSession.handleKey on the tap callback — never inject here.
+        // Global VI/EN toggle is Carbon RegisterEventHotKey (ToggleHotkeyRegistrar), not EventTap.
         eventTap.keyHandler = { [weak self] key, _, _ in
             guard let self else { return .pass }
             let decision = self.typingSession.handleKey(key)
             return decision.consumeOriginal ? .consume : .pass
         }
+
+        toggleHotkeyRegistrar.onHotkey = { [weak self] in
+            self?.toggleTyping()
+        }
+        reregisterToggleHotkey()
 
         focusObserver.onFocusChange = { [weak self] _, _ in
             self?.typingSession.resetCompose()
@@ -109,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         axPollTimer?.invalidate()
+        toggleHotkeyRegistrar.unregister()
         eventTap.stop()
         focusObserver.stop()
         inputSourceObserver.stop()
@@ -320,10 +329,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.refreshProfileCache()
             self?.syncUI()
         }
+        settings.onToggleHotkeyChanged = { [weak self] in
+            self?.reregisterToggleHotkey()
+            self?.syncUI()
+        }
+        settings.onToggleHotkeyRecordingChanged = { [weak self] recording in
+            guard let self else { return }
+            if recording {
+                // Avoid capturing the new combo as a toggle press.
+                self.toggleHotkeyRegistrar.clearHotKey()
+            } else {
+                self.reregisterToggleHotkey()
+            }
+        }
         settings.onWindowDidClose = { [weak self] in
             // Ensure accessory policy even if user closed via red traffic light.
+            guard let self else { return }
+            self.state.isRecordingToggleHotkey = false
+            self.reregisterToggleHotkey()
             NSApp.setActivationPolicy(.accessory)
-            self?.syncUI()
+            self.syncUI()
         }
     }
 
@@ -332,6 +357,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         typingSession.resetCompose()
         refreshProfileCache()
         syncUI()
+    }
+
+    private func reregisterToggleHotkey() {
+        guard !state.isRecordingToggleHotkey else {
+            toggleHotkeyRegistrar.clearHotKey()
+            return
+        }
+        toggleHotkeyRegistrar.register(state.toggleHotkey)
     }
 
     private func setEngineMethod(_ method: AppEngineMethod) {

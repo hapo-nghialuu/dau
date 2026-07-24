@@ -115,8 +115,10 @@ final class AppStateTests: XCTestCase {
         let state = AppState()
         state.accessibilityTrusted = false
         state.eventTapRunning = false
-        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — chưa sẵn sàng")
+        XCTAssertTrue(state.menuBarAccessibilityLabel.contains("chưa sẵn sàng"))
+        XCTAssertTrue(state.menuBarAccessibilityLabel.contains(state.toggleShortcutDisplay))
         XCTAssertTrue(state.menuBarToolTip.contains("Accessibility"))
+        XCTAssertTrue(state.menuBarToolTip.contains(state.toggleShortcutDisplay))
     }
 
     func testToolTipAndAccessibilityForTapStopped() {
@@ -124,24 +126,29 @@ final class AppStateTests: XCTestCase {
         state.accessibilityTrusted = true
         state.eventTapRunning = false
         XCTAssertEqual(state.menuBarIconState, .setup)
-        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — chưa sẵn sàng")
+        XCTAssertTrue(state.menuBarAccessibilityLabel.contains("chưa sẵn sàng"))
         XCTAssertTrue(state.menuBarToolTip.contains("event tap") || state.menuBarToolTip.contains("chưa chạy"))
+        XCTAssertTrue(state.menuBarToolTip.contains(state.toggleShortcutDisplay))
     }
 
     func testToolTipAndAccessibilityForVI() {
         let state = AppState()
         makeTrustedRunning(state: state)
         state.typingEnabled = true
-        XCTAssertEqual(state.menuBarToolTip, "Dấu — VI (đang gõ tiếng Việt)")
-        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — VI")
+        XCTAssertTrue(state.menuBarToolTip.contains("VI (đang gõ tiếng Việt)"))
+        XCTAssertTrue(state.menuBarToolTip.contains(state.toggleShortcutDisplay))
+        XCTAssertTrue(state.menuBarAccessibilityLabel.contains("VI"))
+        XCTAssertTrue(state.menuBarAccessibilityLabel.contains(state.toggleShortcutDisplay))
     }
 
     func testToolTipAndAccessibilityForEN() {
         let state = AppState()
         makeTrustedRunning(state: state)
         state.typingEnabled = false
-        XCTAssertEqual(state.menuBarToolTip, "Dấu — EN (tắt gõ tiếng Việt)")
-        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — EN")
+        XCTAssertTrue(state.menuBarToolTip.contains("EN (tắt gõ tiếng Việt)"))
+        XCTAssertTrue(state.menuBarToolTip.contains(state.toggleShortcutDisplay))
+        XCTAssertTrue(state.menuBarAccessibilityLabel.hasPrefix("Dấu — EN"))
+        XCTAssertTrue(state.menuBarAccessibilityLabel.contains(state.toggleShortcutDisplay))
     }
 
     func testToolTipAndAccessibilityForBlocked() {
@@ -150,7 +157,10 @@ final class AppStateTests: XCTestCase {
         state.typingEnabled = true
         state.inputSourceBlocked = true
         XCTAssertTrue(state.menuBarToolTip.contains("tạm tắt") || state.menuBarToolTip.contains("EN"))
-        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — EN, tạm tắt")
+        XCTAssertTrue(state.menuBarToolTip.contains(state.toggleShortcutDisplay))
+        XCTAssertTrue(state.menuBarAccessibilityLabel.contains("EN"))
+        XCTAssertTrue(state.menuBarAccessibilityLabel.contains("tạm tắt"))
+        XCTAssertTrue(state.menuBarAccessibilityLabel.contains(state.toggleShortcutDisplay))
     }
 
     // MARK: - Accessibility menu label
@@ -164,9 +174,11 @@ final class AppStateTests: XCTestCase {
     func testMenuHeaderSubtitleIncludesMethodAndShortcut() {
         let state = AppState()
         state.engineMethod = .telex
-        XCTAssertEqual(state.menuHeaderSubtitle, "Telex · ⌘⇧E")
+        XCTAssertEqual(state.menuHeaderSubtitle, "Telex · \(state.toggleShortcutDisplay)")
         state.engineMethod = .vni
-        XCTAssertEqual(state.menuHeaderSubtitle, "VNI · ⌘⇧E")
+        XCTAssertEqual(state.menuHeaderSubtitle, "VNI · \(state.toggleShortcutDisplay)")
+        XCTAssertEqual(state.toggleHotkey, .default)
+        XCTAssertEqual(state.toggleShortcutDisplay, "⇧⌘E")
     }
 
     func testAccessibilityMenuLabelWhenUntrusted() {
@@ -215,7 +227,8 @@ final class AppStateTests: XCTestCase {
         XCTAssertTrue(state.autoRestore)
         XCTAssertFalse(state.autoCapitalize)
         XCTAssertFalse(state.launchAtLoginDesired)
-        XCTAssertEqual(AppState.toggleShortcutDisplay, "⌘⇧E")
+        XCTAssertEqual(state.toggleHotkey, .default)
+        XCTAssertEqual(state.toggleShortcutDisplay, AppState.defaultToggleShortcutDisplay)
         defaults.removePersistentDomain(forName: suite)
     }
 
@@ -233,6 +246,13 @@ final class AppStateTests: XCTestCase {
         writer.autoRestore = false
         writer.autoCapitalize = true
         writer.launchAtLoginDesired = true
+        writer.toggleHotkey = ToggleHotkey(
+            keyCode: 49,
+            command: false,
+            control: true,
+            option: false,
+            shift: false
+        )
 
         let reader = AppState(defaults: defaults)
         XCTAssertFalse(reader.typingEnabled)
@@ -240,6 +260,10 @@ final class AppStateTests: XCTestCase {
         XCTAssertFalse(reader.autoRestore)
         XCTAssertTrue(reader.autoCapitalize)
         XCTAssertTrue(reader.launchAtLoginDesired)
+        XCTAssertEqual(reader.toggleHotkey.keyCode, 49)
+        XCTAssertTrue(reader.toggleHotkey.control)
+        XCTAssertFalse(reader.toggleHotkey.command)
+        XCTAssertEqual(reader.toggleShortcutDisplay, "⌃Space")
 
         defaults.removePersistentDomain(forName: suite)
     }
@@ -250,7 +274,25 @@ final class AppStateTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
         let state = AppState(defaults: defaults)
         state.engineMethod = .telex
-        XCTAssertEqual(state.menuHeaderSubtitle, "Telex · \(AppState.toggleShortcutDisplay)")
+        XCTAssertEqual(state.menuHeaderSubtitle, "Telex · \(state.toggleShortcutDisplay)")
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testResetToggleHotkeyToDefault() {
+        let suite = "io.github.hapo-nghialuu.dau.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let state = AppState(defaults: defaults)
+        state.toggleHotkey = ToggleHotkey(
+            keyCode: 49,
+            command: false,
+            control: true,
+            option: false,
+            shift: false
+        )
+        state.resetToggleHotkeyToDefault()
+        XCTAssertEqual(state.toggleHotkey, .default)
+        XCTAssertEqual(state.toggleShortcutDisplay, "⇧⌘E")
         defaults.removePersistentDomain(forName: suite)
     }
 }

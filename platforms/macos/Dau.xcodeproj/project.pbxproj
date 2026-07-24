@@ -60,6 +60,11 @@
 		DAU00001000000000000093 /* settings-view.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000093 /* settings-view.swift */; };
 		DAU00001000000000000094 /* launch-at-login.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000094 /* launch-at-login.swift */; };
 		DAU00001000000000000095 /* launch-at-login.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000094 /* launch-at-login.swift */; };
+		DAU00001000000000000096 /* toggle-hotkey.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000096 /* toggle-hotkey.swift */; };
+		DAU00001000000000000097 /* toggle-hotkey.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000096 /* toggle-hotkey.swift */; };
+		DAU00001000000000000098 /* toggle-hotkey-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000098 /* toggle-hotkey-tests.swift */; };
+		DAU00001000000000000099 /* toggle-hotkey-registrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000099 /* toggle-hotkey-registrar.swift */; };
+		DAU0000100000000000009A /* toggle-hotkey-registrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000099 /* toggle-hotkey-registrar.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -114,6 +119,9 @@
 		DAU00002000000000000092 /* typing-session-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "typing-session-tests.swift"; sourceTree = "<group>"; };
 		DAU00002000000000000093 /* settings-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "settings-view.swift"; sourceTree = "<group>"; };
 		DAU00002000000000000094 /* launch-at-login.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "launch-at-login.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000096 /* toggle-hotkey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "toggle-hotkey.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000098 /* toggle-hotkey-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "toggle-hotkey-tests.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000099 /* toggle-hotkey-registrar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "toggle-hotkey-registrar.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -212,6 +220,7 @@
 				DAU00002000000000000088 /* app-state-tests.swift */,
 				DAU00002000000000000089 /* input-source-observer-tests.swift */,
 				DAU00002000000000000092 /* typing-session-tests.swift */,
+				DAU00002000000000000098 /* toggle-hotkey-tests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -255,6 +264,8 @@
 				DAU00002000000000000071 /* injection-profile-store.swift */,
 				DAU00002000000000000072 /* injection-profile-resolver.swift */,
 				DAU00002000000000000094 /* launch-at-login.swift */,
+				DAU00002000000000000096 /* toggle-hotkey.swift */,
+				DAU00002000000000000099 /* toggle-hotkey-registrar.swift */,
 			);
 			path = config;
 			sourceTree = "<group>";
@@ -389,6 +400,8 @@
 				DAU00001000000000000084 /* onboarding-view.swift in Sources */,
 				DAU00001000000000000093 /* settings-view.swift in Sources */,
 				DAU00001000000000000094 /* launch-at-login.swift in Sources */,
+				DAU00001000000000000096 /* toggle-hotkey.swift in Sources */,
+				DAU00001000000000000099 /* toggle-hotkey-registrar.swift in Sources */,
 				DAU00001000000000000090 /* typing-session.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -421,6 +434,9 @@
 				DAU00001000000000000091 /* typing-session.swift in Sources */,
 				DAU00001000000000000092 /* typing-session-tests.swift in Sources */,
 				DAU00001000000000000095 /* launch-at-login.swift in Sources */,
+				DAU00001000000000000097 /* toggle-hotkey.swift in Sources */,
+				DAU0000100000000000009A /* toggle-hotkey-registrar.swift in Sources */,
+				DAU00001000000000000098 /* toggle-hotkey-tests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

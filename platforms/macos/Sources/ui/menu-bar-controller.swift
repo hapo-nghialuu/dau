@@ -103,16 +103,17 @@ final class MenuBarController: NSObject {
         )
         menu.addItem(header)
 
-        // Keyboard toggle (⌘⇧E) — works even though primary UI is the header switch.
-        let toggleHotkey = NSMenuItem(
-            title: "Bật/Tắt tiếng Việt",
+        // Title carries shortcut for discoverability. Global fire is Carbon only
+        // (avoid NSMenuItem keyEquivalent + RegisterEventHotKey double-toggle).
+        let hotkey = state.toggleHotkey
+        let toggleItem = NSMenuItem(
+            title: "Bật/Tắt tiếng Việt (\(hotkey.displayString))",
             action: #selector(handleToggleTyping),
-            keyEquivalent: "e"
+            keyEquivalent: ""
         )
-        toggleHotkey.keyEquivalentModifierMask = [.command, .shift]
-        toggleHotkey.target = self
-        toggleHotkey.isHidden = true
-        menu.addItem(toggleHotkey)
+        toggleItem.target = self
+        toggleItem.isHidden = true
+        menu.addItem(toggleItem)
 
         menu.addItem(.separator())
 

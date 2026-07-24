@@ -5,6 +5,68 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Toggle hotkey recorder
+
+/// Local keyDown capture while Settings is key window (Esc = cancel).
+final class ToggleHotkeyRecorder: ObservableObject {
+    @Published private(set) var isRecording = false
+
+    private var monitor: Any?
+    private var onCapture: ((ToggleHotkey) -> Void)?
+    private var onCancel: (() -> Void)?
+
+    deinit {
+        stop()
+    }
+
+    func start(onCapture: @escaping (ToggleHotkey) -> Void, onCancel: @escaping () -> Void) {
+        stop()
+        self.onCapture = onCapture
+        self.onCancel = onCancel
+        isRecording = true
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            // Escape cancels without changing the hotkey.
+            if event.keyCode == 53 {
+                self.finishCancel()
+                return nil
+            }
+            if let hotkey = ToggleHotkey.fromKeyDownEvent(event) {
+                let captured = self.onCapture
+                self.tearDownMonitor()
+                self.isRecording = false
+                self.onCapture = nil
+                self.onCancel = nil
+                captured?(hotkey)
+                return nil
+            }
+            // Invalid combo (e.g. bare letter): keep listening, swallow key.
+            return nil
+        }
+    }
+
+    func stop() {
+        guard isRecording || monitor != nil else { return }
+        finishCancel()
+    }
+
+    private func finishCancel() {
+        let cancel = onCancel
+        tearDownMonitor()
+        isRecording = false
+        onCapture = nil
+        onCancel = nil
+        cancel?()
+    }
+
+    private func tearDownMonitor() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+}
+
 // MARK: - Navigation
 
 enum SettingsPage: String, CaseIterable, Identifiable {
@@ -113,6 +175,10 @@ final class SettingsViewModel: ObservableObject {
     var onSelectMethod: ((AppEngineMethod) -> Void)?
     var onAutoRestoreChanged: ((Bool) -> Void)?
     var onAutoCapitalizeChanged: ((Bool) -> Void)?
+    /// Menu/header refresh after toggle hotkey change.
+    var onToggleHotkeyChanged: (() -> Void)?
+    /// Pause/resume Carbon global hotkey while recording.
+    var onToggleHotkeyRecordingChanged: ((Bool) -> Void)?
 
     init(
         appState: AppState,
@@ -243,6 +309,14 @@ final class SettingsController: NSObject, NSWindowDelegate {
         get { model.onProfilesChanged }
         set { model.onProfilesChanged = newValue }
     }
+    var onToggleHotkeyChanged: (() -> Void)? {
+        get { model.onToggleHotkeyChanged }
+        set { model.onToggleHotkeyChanged = newValue }
+    }
+    var onToggleHotkeyRecordingChanged: ((Bool) -> Void)? {
+        get { model.onToggleHotkeyRecordingChanged }
+        set { model.onToggleHotkeyRecordingChanged = newValue }
+    }
 
     init(
         state: AppState,
@@ -313,6 +387,8 @@ final class SettingsController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        // Ensure global toggle matching is re-enabled if user closed mid-record.
+        state.isRecordingToggleHotkey = false
         window = nil
         hosting = nil
         NSApp.setActivationPolicy(.accessory)
@@ -433,6 +509,7 @@ struct SettingsRootView: View {
 struct SettingsGeneralPage: View {
     @ObservedObject var state: AppState
     @ObservedObject var model: SettingsViewModel
+    @StateObject private var hotkeyRecorder = ToggleHotkeyRecorder()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -470,6 +547,10 @@ struct SettingsGeneralPage: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
+            }
+
+            settingsCard(title: "Phím tắt") {
+                toggleHotkeyRow
             }
 
             settingsCard(title: "Quy tắc gõ") {
@@ -526,10 +607,82 @@ struct SettingsGeneralPage: View {
                 }
                 .buttonStyle(.plain)
             }
+        }
+        .onDisappear {
+            stopHotkeyRecording()
+        }
+    }
 
-            Text("Phím tắt bật/tắt: \(AppState.toggleShortcutDisplay) · recorder sẽ có ở bản sau.")
+    private var toggleHotkeyRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Phím tắt bật/tắt tiếng Việt")
+                    .font(.system(size: 13))
+                Text(
+                    hotkeyRecorder.isRecording
+                        ? "Nhấn tổ hợp phím… (Esc để huỷ · giữ phím cũ nếu huỷ)"
+                        : "Toàn cục (Carbon) · cần ⌘ / ⌃ / ⌥ + phím"
+                )
                 .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(hotkeyRecorder.isRecording ? Color.accentColor : .secondary)
+            }
+            Spacer(minLength: 8)
+            Text(state.toggleHotkey.displayString)
+                .font(.system(size: 12, weight: .medium).monospaced())
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(
+                            hotkeyRecorder.isRecording ? Color.accentColor : Color(nsColor: .separatorColor),
+                            lineWidth: 1
+                        )
+                )
+            if hotkeyRecorder.isRecording {
+                Button("Huỷ") {
+                    stopHotkeyRecording()
+                }
+            } else {
+                Button("Đổi…") {
+                    startHotkeyRecording()
+                }
+                if state.toggleHotkey != .default {
+                    Button("Mặc định") {
+                        state.resetToggleHotkeyToDefault()
+                        model.onToggleHotkeyChanged?()
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    private func startHotkeyRecording() {
+        state.isRecordingToggleHotkey = true
+        model.onToggleHotkeyRecordingChanged?(true)
+        hotkeyRecorder.start { captured in
+            // Invalid combos never reach here — previous shortcut kept.
+            state.toggleHotkey = captured
+            state.isRecordingToggleHotkey = false
+            model.onToggleHotkeyRecordingChanged?(false)
+            model.onToggleHotkeyChanged?()
+        } onCancel: {
+            // Esc / Huỷ: keep previous (or default if never set).
+            state.isRecordingToggleHotkey = false
+            model.onToggleHotkeyRecordingChanged?(false)
+        }
+    }
+
+    private func stopHotkeyRecording() {
+        hotkeyRecorder.stop()
+        if state.isRecordingToggleHotkey {
+            state.isRecordingToggleHotkey = false
+            model.onToggleHotkeyRecordingChanged?(false)
         }
     }
 
