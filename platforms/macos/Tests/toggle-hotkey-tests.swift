@@ -135,4 +135,27 @@ final class ToggleHotkeyTests: XCTestCase {
         XCTAssertEqual(hk.displayString, "⇧⌘A")
     }
 
+
+    func testCommandShiftOnlyIsValid() {
+        let hk = ToggleHotkey.commandShiftOnly
+        XCTAssertTrue(hk.isModifierOnly)
+        XCTAssertTrue(hk.isValid)
+        XCTAssertEqual(hk.displayString, "⇧⌘")
+        XCTAssertNil(hk.menuKeyEquivalent)
+        XCTAssertTrue(hk.matchesModifiers(command: true, control: false, option: false, shift: true))
+        XCTAssertFalse(hk.matchesModifiers(command: true, control: false, option: false, shift: false))
+    }
+
+    func testSingleModifierOnlyIsInvalid() {
+        let shiftOnly = ToggleHotkey(keyCode: nil, command: false, control: false, option: false, shift: true)
+        XCTAssertFalse(shiftOnly.isValid)
+        let cmdOnly = ToggleHotkey(keyCode: nil, command: true, control: false, option: false, shift: false)
+        XCTAssertFalse(cmdOnly.isValid)
+    }
+
+    func testDefaultKeyCodeNonNil() {
+        XCTAssertEqual(ToggleHotkey.default.keyCode, 14)
+        XCTAssertFalse(ToggleHotkey.default.isModifierOnly)
+    }
+
 }

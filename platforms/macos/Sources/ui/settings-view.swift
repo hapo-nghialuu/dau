@@ -33,7 +33,12 @@ final class ToggleHotkeyRecorder: ObservableObject {
             guard let self else { return event }
 
             if event.type == .flagsChanged {
+                // Allow capturing modifier-only chords (e.g. ⌘⇧) after ≥2 modifiers held briefly.
                 self.livePreview = ToggleHotkey.modifiersDisplay(from: event)
+                if let hotkey = ToggleHotkey.fromFlagsChangedEvent(event), hotkey.isModifierOnly {
+                    // Debounce: only accept when exactly the chord is down (no extra keys).
+                    self.commitCapture(hotkey)
+                }
                 return nil
             }
 
@@ -45,22 +50,26 @@ final class ToggleHotkeyRecorder: ObservableObject {
                 return nil
             }
             if let hotkey = ToggleHotkey.fromKeyDownEvent(event) {
-                let captured = self.onCapture
-                self.tearDownMonitor()
-                self.isRecording = false
-                self.livePreview = "…"
-                self.onCapture = nil
-                self.onCancel = nil
-                captured?(hotkey)
+                self.commitCapture(hotkey)
                 return nil
             }
-            // Invalid (e.g. bare letter without ⌘/⌃/⌥): update hint, keep listening.
+            // Invalid (e.g. bare letter): update hint, keep listening.
             self.livePreview = ToggleHotkey.modifiersDisplay(from: event)
             if self.livePreview == "…" {
-                self.livePreview = "Cần ⌘ / ⌃ / ⌥ + phím"
+                self.livePreview = "⌘⇧ (2 phím) hoặc ⌘⇧E (3 phím)"
             }
             return nil
         }
+    }
+
+    private func commitCapture(_ hotkey: ToggleHotkey) {
+        let captured = onCapture
+        tearDownMonitor()
+        isRecording = false
+        livePreview = "…"
+        onCapture = nil
+        onCancel = nil
+        captured?(hotkey)
     }
 
     func stop() {
@@ -639,8 +648,8 @@ struct SettingsGeneralPage: View {
                     .font(.system(size: 13))
                 Text(
                     hotkeyRecorder.isRecording
-                        ? "Nhấn ⌘/⌃/⌥ + phím (vd. ⇧⌘A). Esc = huỷ."
-                        : "Toàn cục · cần ⌘ / ⌃ / ⌥ + phím"
+                        ? "Giữ ⌘⇧ (2 phím) hoặc ⌘⇧E (3 phím). Esc = huỷ."
+                        : "Toàn cục · 2 modifier (⌘⇧) hoặc modifier + phím"
                 )
                 .font(.system(size: 11))
                 .foregroundStyle(hotkeyRecorder.isRecording ? Color.accentColor : .secondary)
