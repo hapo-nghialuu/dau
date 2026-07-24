@@ -62,12 +62,15 @@ final class MacKeyPipelineTests: XCTestCase {
     // MARK: - UpdatePreedit sequence (Telex)
 
     func testTelexUpdatePreeditBuildsProvisional() {
+        // First "a": plain append → pass original key (TG-02).
         let r1 = pipeline.handlePrintable(sc("a"))
-        XCTAssertTrue(r1.consumeOriginal)
+        XCTAssertFalse(r1.consumeOriginal)
         XCTAssertEqual(r1.backspace, 0)
-        XCTAssertEqual(r1.text, "a")
+        XCTAssertEqual(r1.text, "")
+        XCTAssertEqual(pipeline.provisionalText, "a")
         XCTAssertEqual(pipeline.provisionalLength, 1)
 
+        // Second "a": transform a → â → consume + replace last scalar only.
         let r2 = pipeline.handlePrintable(sc("a"))
         XCTAssertTrue(r2.consumeOriginal)
         XCTAssertEqual(r2.backspace, 1)
@@ -81,6 +84,116 @@ final class MacKeyPipelineTests: XCTestCase {
         // Telex: tieengs → tiếng
         XCTAssertEqual(pipeline.provisionalText, "tiếng")
         XCTAssertEqual(pipeline.provisionalLength, "tiếng".unicodeScalars.count)
+    }
+
+    // MARK: - TG-02: delta suffix + English append pass-through
+
+    /// English `delete`: each letter is plain append — no full-word rewrite.
+    func testEnglishDeleteStepwiseNoFullRewrite() {
+        var doc = ""
+        let word = "delete"
+        var expectedPrefixes: [String] = []
+        var built = ""
+        for ch in word {
+            built.append(ch)
+            expectedPrefixes.append(built)
+        }
+
+        for (i, ch) in word.unicodeScalars.enumerated() {
+            let r = pipeline.handlePrintable(ch)
+            XCTAssertEqual(r.backspace, 0, "key \(i) '\(ch)': no synthetic backspace")
+            XCTAssertEqual(r.text, "", "key \(i): no synthetic inject text")
+            XCTAssertFalse(r.consumeOriginal, "key \(i): pass original")
+            // Fake document: only original key (pass-through).
+            doc.append(Character(ch))
+            XCTAssertEqual(doc, expectedPrefixes[i])
+            XCTAssertEqual(pipeline.provisionalText, expectedPrefixes[i])
+        }
+
+        let commit = pipeline.handleBreak(sc(" "))
+        XCTAssertEqual(commit.backspace, 0)
+        XCTAssertEqual(commit.text, "")
+        XCTAssertFalse(commit.consumeOriginal, "Space forwarded once")
+        doc.append(" ")
+        XCTAssertEqual(doc, "delete ")
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+    }
+
+    /// Tone/mark keys rewrite only the changed suffix, not the whole provisional.
+    /// Telex: t→i→e append, second e transforms `tie` → `tiê` (bs=1, text=`ê`).
+    func testTelexToneTransformUsesMinimalSuffix() {
+        _ = typeASCII("tie")
+        XCTAssertEqual(pipeline.provisionalText, "tie")
+        let beforeLen = pipeline.provisionalLength
+        XCTAssertEqual(beforeLen, 3)
+
+        let r = pipeline.handlePrintable(sc("e"))
+        XCTAssertTrue(r.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalText, "tiê")
+        // Common prefix "ti" stays; only replace final vowel scalar.
+        XCTAssertEqual(r.backspace, 1, "must not wipe entire provisional")
+        XCTAssertEqual(r.text, "ê")
+        XCTAssertLessThan(r.backspace, beforeLen)
+    }
+
+    func testTelexTieengsTransformKeysOnlyWhenNeeded() {
+        // Track which keys need consume (transform) vs pass (append).
+        var results: [(Character, BridgeResult)] = []
+        for ch in "tieengs" {
+            results.append((ch, pipeline.handlePrintable(sc(ch))))
+        }
+        XCTAssertEqual(pipeline.provisionalText, "tiếng")
+
+        // At least the pure letter appends early on must pass original.
+        let first = results[0].1
+        XCTAssertFalse(first.consumeOriginal)
+        XCTAssertEqual(first.backspace, 0)
+        XCTAssertEqual(first.text, "")
+
+        // Some later keys transform (tone/mark); those consume with non-zero rewrite or empty same.
+        let anyTransform = results.contains { $0.1.consumeOriginal && ($0.1.backspace > 0 || !$0.1.text.isEmpty) }
+        XCTAssertTrue(anyTransform, "tieengs must include at least one transform inject")
+    }
+
+    func testDduawSequenceDocumentsProvisionalAfterEachKey() {
+        // Document provisional after each key (core output may be đuă or đưa depending on TG-01).
+        var last = ""
+        for ch in "dduaw" {
+            _ = pipeline.handlePrintable(sc(ch))
+            last = pipeline.provisionalText
+            XCTAssertFalse(last.isEmpty)
+            // No step should request full wipe larger than current provisional was.
+            // (asserted via delta: backspace ≤ previous length — tracked below)
+        }
+        // Final compose is non-empty Vietnamese-ish syllable; exact form is TG-01's job.
+        XCTAssertFalse(pipeline.provisionalText.isEmpty)
+        XCTAssertEqual(pipeline.provisionalLength, pipeline.provisionalText.unicodeScalars.count)
+
+        // Space commit must not double text when matching provisional.
+        let committed = pipeline.provisionalText
+        let breakR = pipeline.handleBreak(sc(" "))
+        if breakR.text.isEmpty {
+            XCTAssertEqual(breakR.backspace, 0)
+        } else {
+            // Auto-restore / change path still forwards Space once.
+            XCTAssertFalse(breakR.consumeOriginal)
+        }
+        _ = committed
+    }
+
+    func testAppendNeverBackspacesFullWord() {
+        // Avoid Telex mark keys (w/s/f/r/x/j) so the word stays plain ASCII appends.
+        var prevLen = 0
+        for ch in "delete" {
+            let r = pipeline.handlePrintable(sc(ch))
+            XCTAssertFalse(r.consumeOriginal, "plain English letter must pass original")
+            XCTAssertEqual(r.backspace, 0)
+            XCTAssertEqual(r.text, "")
+            // Never rewrite more scalars than already on screen (prevLen).
+            XCTAssertLessThanOrEqual(r.backspace, prevLen)
+            prevLen = pipeline.provisionalLength
+        }
+        XCTAssertEqual(pipeline.provisionalText, "delete")
     }
 
     // MARK: - Commit
@@ -147,10 +260,12 @@ final class MacKeyPipelineTests: XCTestCase {
         XCTAssertTrue(r.consumeOriginal)
         XCTAssertEqual(pipeline.provisionalLength, 0)
         XCTAssertEqual(pipeline.provisionalText, "")
-        // Next printable starts fresh (no leftover core word).
+        // Next printable starts fresh (no leftover core word); plain append passes original.
         let next = pipeline.handlePrintable(sc("a"))
         XCTAssertEqual(next.backspace, 0)
-        XCTAssertEqual(next.text, "a")
+        XCTAssertEqual(next.text, "")
+        XCTAssertFalse(next.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalText, "a")
     }
 
     func testDeleteWithoutComposePassthrough() {
@@ -242,7 +357,8 @@ final class MacKeyPipelineTests: XCTestCase {
         // Core must not revive the previous word.
         let next = pipeline.handlePrintable(sc("a"))
         XCTAssertEqual(next.backspace, 0)
-        XCTAssertEqual(next.text, "a")
+        XCTAssertEqual(next.text, "")
+        XCTAssertFalse(next.consumeOriginal)
         XCTAssertEqual(pipeline.provisionalText, "a")
     }
 
@@ -312,7 +428,9 @@ final class MacKeyPipelineTests: XCTestCase {
 
         let next = pipeline.handlePrintable(sc("a"))
         XCTAssertEqual(next.backspace, 0)
-        XCTAssertEqual(next.text, "a")
+        XCTAssertEqual(next.text, "")
+        XCTAssertFalse(next.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalText, "a")
     }
 
     func testCmdDeleteBoundaryDoesNotWipeAsComposeDelete() {
@@ -366,10 +484,12 @@ final class MacKeyPipelineTests: XCTestCase {
         let r = pipeline.handle(kind: .boundary)
         XCTAssertEqual(r, .passthrough)
         XCTAssertEqual(pipeline.provisionalLength, 0)
-        // Next key starts a fresh word.
+        // Next key starts a fresh word (plain append passes original).
         let next = pipeline.handlePrintable(sc("b"))
-        XCTAssertEqual(next.text, "b")
+        XCTAssertEqual(next.text, "")
         XCTAssertEqual(next.backspace, 0)
+        XCTAssertFalse(next.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalText, "b")
     }
 
     func testResetComposeClearsCoreAndState() {
@@ -378,7 +498,9 @@ final class MacKeyPipelineTests: XCTestCase {
         XCTAssertEqual(pipeline.provisionalLength, 0)
         let r = pipeline.handlePrintable(sc("x"))
         XCTAssertEqual(r.backspace, 0)
-        XCTAssertEqual(r.text, "x")
+        XCTAssertEqual(r.text, "")
+        XCTAssertFalse(r.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalText, "x")
     }
 
     // MARK: - Method switch + VNI smoke

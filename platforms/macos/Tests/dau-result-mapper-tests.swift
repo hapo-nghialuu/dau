@@ -1,5 +1,26 @@
-// Unit tests for DauResultMapper (§2.4). No EventTap; pure provisional state.
+// Unit tests for DauResultMapper (§2.4 + TG-02). No EventTap; pure provisional state.
+// Fake document asserts final text after each key, not only BridgeResult tuples.
 import XCTest
+
+/// Applies `BridgeResult` (+ optional original key on pass-through) to a document buffer.
+private struct FakeDocument {
+    var text: String = ""
+
+    mutating func apply(result: BridgeResult, originalKey: String? = nil) {
+        if result.backspace > 0 {
+            let scalars = Array(text.unicodeScalars)
+            let keep = max(0, scalars.count - result.backspace)
+            text = String(String.UnicodeScalarView(scalars.prefix(keep)))
+        }
+        if !result.text.isEmpty {
+            text += result.text
+        }
+        // Plain append: original key reaches the app (consumeOriginal = false).
+        if !result.consumeOriginal, let key = originalKey, !key.isEmpty {
+            text += key
+        }
+    }
+}
 
 final class DauResultMapperTests: XCTestCase {
     private var provisionalText = ""
@@ -11,15 +32,24 @@ final class DauResultMapperTests: XCTestCase {
         provisionalLength = 0
     }
 
-    // MARK: - None
-
-    func testNoneWithEmptyProvisionalForwards() {
-        let r = DauResultMapper.map(
-            action: DauAction_None,
-            text: "ignored",
+    private func map(
+        action: DauAction,
+        text: String,
+        capitalizeNext: Bool = false
+    ) -> BridgeResult {
+        DauResultMapper.map(
+            action: action,
+            text: text,
+            capitalizeNext: capitalizeNext,
             provisionalText: &provisionalText,
             provisionalLength: &provisionalLength
         )
+    }
+
+    // MARK: - None
+
+    func testNoneWithEmptyProvisionalForwards() {
+        let r = map(action: DauAction_None, text: "ignored")
         XCTAssertEqual(r.backspace, 0)
         XCTAssertEqual(r.text, "")
         XCTAssertFalse(r.consumeOriginal)
@@ -30,12 +60,7 @@ final class DauResultMapperTests: XCTestCase {
     func testNoneWhileComposingWipesProvisional() {
         provisionalText = "đã"
         provisionalLength = 2
-        let r = DauResultMapper.map(
-            action: DauAction_None,
-            text: "ignored",
-            provisionalText: &provisionalText,
-            provisionalLength: &provisionalLength
-        )
+        let r = map(action: DauAction_None, text: "ignored")
         XCTAssertEqual(r.backspace, 2)
         XCTAssertEqual(r.text, "")
         XCTAssertFalse(r.consumeOriginal)
@@ -43,36 +68,94 @@ final class DauResultMapperTests: XCTestCase {
         XCTAssertEqual(provisionalLength, 0)
     }
 
-    // MARK: - UpdatePreedit
+    // MARK: - UpdatePreedit: plain append (TG-02)
 
-    func testUpdatePreeditFirstChar() {
-        let r = DauResultMapper.map(
-            action: DauAction_UpdatePreedit,
-            text: "a",
-            provisionalText: &provisionalText,
-            provisionalLength: &provisionalLength
-        )
+    func testUpdatePreeditFirstCharPassesOriginal() {
+        let r = map(action: DauAction_UpdatePreedit, text: "a")
         XCTAssertEqual(r.backspace, 0)
-        XCTAssertEqual(r.text, "a")
-        XCTAssertTrue(r.consumeOriginal)
+        XCTAssertEqual(r.text, "")
+        XCTAssertFalse(r.consumeOriginal, "first scalar is plain append → pass physical key")
         XCTAssertEqual(provisionalText, "a")
         XCTAssertEqual(provisionalLength, 1)
     }
 
-    func testUpdatePreeditReplacesPreviousProvisional() {
+    func testUpdatePreeditEnglishDeleteStepwiseNoRewrite() {
+        var doc = FakeDocument()
+        let steps = ["d", "de", "del", "dele", "delet", "delete"]
+        var expected = ""
+        for (i, preedit) in steps.enumerated() {
+            let key = String(preedit.suffix(1))
+            let r = map(action: DauAction_UpdatePreedit, text: preedit)
+            XCTAssertEqual(r.backspace, 0, "step \(i) (\(preedit)): no synthetic backspace")
+            XCTAssertEqual(r.text, "", "step \(i): no synthetic retype")
+            XCTAssertFalse(r.consumeOriginal, "step \(i): pass original key")
+            doc.apply(result: r, originalKey: key)
+            expected += key
+            XCTAssertEqual(doc.text, expected, "document after \(preedit)")
+            XCTAssertEqual(provisionalText, preedit)
+            XCTAssertEqual(provisionalLength, preedit.unicodeScalars.count)
+        }
+        XCTAssertEqual(doc.text, "delete")
+    }
+
+    func testUpdatePreeditSimpleAppendVNLetterPassesOriginal() {
+        provisionalText = "đ"
+        provisionalLength = 1
+        let r = map(action: DauAction_UpdatePreedit, text: "đu")
+        XCTAssertEqual(r.backspace, 0)
+        XCTAssertEqual(r.text, "")
+        XCTAssertFalse(r.consumeOriginal)
+        XCTAssertEqual(provisionalText, "đu")
+        XCTAssertEqual(provisionalLength, 2)
+    }
+
+    // MARK: - UpdatePreedit: tone / mark transform (minimal suffix)
+
+    func testUpdatePreeditToneTransformMinimalSuffix() {
+        // "tieen" → "tiên": common prefix "ti", delete "een" (3), inject "ên".
         provisionalText = "tieen"
         provisionalLength = 5
-        let r = DauResultMapper.map(
-            action: DauAction_UpdatePreedit,
-            text: "tiên",
-            provisionalText: &provisionalText,
-            provisionalLength: &provisionalLength
-        )
-        XCTAssertEqual(r.backspace, 5)
-        XCTAssertEqual(r.text, "tiên")
+        let r = map(action: DauAction_UpdatePreedit, text: "tiên")
+        XCTAssertEqual(r.backspace, 3)
+        XCTAssertEqual(r.text, "ên")
         XCTAssertTrue(r.consumeOriginal)
         XCTAssertEqual(provisionalText, "tiên")
         XCTAssertEqual(provisionalLength, "tiên".unicodeScalars.count)
+    }
+
+    func testUpdatePreeditAaToCircumflexMinimalRewrite() {
+        provisionalText = "a"
+        provisionalLength = 1
+        let r = map(action: DauAction_UpdatePreedit, text: "â")
+        XCTAssertEqual(r.backspace, 1)
+        XCTAssertEqual(r.text, "â")
+        XCTAssertTrue(r.consumeOriginal)
+        XCTAssertEqual(provisionalText, "â")
+        XCTAssertEqual(provisionalLength, 1)
+    }
+
+    func testUpdatePreeditToneOnLastVowelMinimalSuffix() {
+        // "hoa" → "hoá": common "ho", replace "a" with "á".
+        provisionalText = "hoa"
+        provisionalLength = 3
+        let r = map(action: DauAction_UpdatePreedit, text: "hoá")
+        XCTAssertEqual(r.backspace, 1)
+        XCTAssertEqual(r.text, "á")
+        XCTAssertTrue(r.consumeOriginal)
+        XCTAssertEqual(provisionalText, "hoá")
+    }
+
+    func testUpdatePreeditDoesNotWipeUnchangedPrefix() {
+        // Full wipe would be backspace=5; delta must keep "ti" on screen.
+        provisionalText = "tieen"
+        provisionalLength = 5
+        var doc = FakeDocument()
+        doc.text = "tieen"
+        let r = map(action: DauAction_UpdatePreedit, text: "tiên")
+        doc.apply(result: r)
+        XCTAssertEqual(doc.text, "tiên")
+        XCTAssertLessThan(r.backspace, 5)
+        XCTAssertEqual(r.backspace, 3)
     }
 
     func testUpdatePreeditCountsUnicodeScalarsNotUTF16() {
@@ -80,15 +163,72 @@ final class DauResultMapperTests: XCTestCase {
         provisionalText = "x"
         provisionalLength = 1
         let flag = "🇺🇸"
-        let r = DauResultMapper.map(
-            action: DauAction_UpdatePreedit,
-            text: flag,
-            provisionalText: &provisionalText,
-            provisionalLength: &provisionalLength
-        )
+        let r = map(action: DauAction_UpdatePreedit, text: flag)
+        // "x" vs flag: common 0 → full replace of one scalar with two.
         XCTAssertEqual(r.backspace, 1)
+        XCTAssertEqual(r.text, flag)
         XCTAssertEqual(provisionalLength, flag.unicodeScalars.count)
         XCTAssertEqual(provisionalLength, 2)
+    }
+
+    func testUpdatePreeditSameTextConsumesWithoutRewrite() {
+        provisionalText = "abc"
+        provisionalLength = 3
+        let r = map(action: DauAction_UpdatePreedit, text: "abc")
+        XCTAssertEqual(r.backspace, 0)
+        XCTAssertEqual(r.text, "")
+        XCTAssertTrue(r.consumeOriginal, "no-op display still consumed (core owned the key)")
+        XCTAssertEqual(provisionalText, "abc")
+    }
+
+    // MARK: - Fake document: transform sequences
+
+    func testFakeDocumentToneSequenceAa() {
+        var doc = FakeDocument()
+        // a
+        var r = map(action: DauAction_UpdatePreedit, text: "a")
+        doc.apply(result: r, originalKey: "a")
+        XCTAssertEqual(doc.text, "a")
+        // second a → â
+        r = map(action: DauAction_UpdatePreedit, text: "â")
+        doc.apply(result: r, originalKey: "a")
+        XCTAssertEqual(doc.text, "â")
+        XCTAssertTrue(r.consumeOriginal)
+        XCTAssertEqual(r.backspace, 1)
+        XCTAssertEqual(r.text, "â")
+    }
+
+    func testFakeDocumentTieToTieCircumflex() {
+        // Mock core transitions for Telex second-e: t→ti→tie→tiê
+        var doc = FakeDocument()
+        for (preedit, key) in [("t", "t"), ("ti", "i"), ("tie", "e")] {
+            let r = map(action: DauAction_UpdatePreedit, text: preedit)
+            doc.apply(result: r, originalKey: key)
+            XCTAssertEqual(doc.text, preedit)
+            XCTAssertFalse(r.consumeOriginal)
+        }
+        // Transform: "tie" → "tiê" (common "ti", replace "e" with "ê")
+        let transform = map(action: DauAction_UpdatePreedit, text: "tiê")
+        doc.apply(result: transform)
+        XCTAssertEqual(doc.text, "tiê")
+        XCTAssertTrue(transform.consumeOriginal)
+        XCTAssertEqual(transform.backspace, 1)
+        XCTAssertEqual(transform.text, "ê")
+    }
+
+    /// Mock dduaw-style suffix change: đua → đưa (common "đ", replace "ua" with "ưa").
+    func testFakeDocumentDduawStyleSuffixDelta() {
+        var doc = FakeDocument()
+        doc.text = "đua"
+        provisionalText = "đua"
+        provisionalLength = 3
+        let r = map(action: DauAction_UpdatePreedit, text: "đưa")
+        doc.apply(result: r)
+        XCTAssertEqual(doc.text, "đưa")
+        XCTAssertEqual(r.backspace, 2)
+        XCTAssertEqual(r.text, "ưa")
+        XCTAssertTrue(r.consumeOriginal)
+        XCTAssertLessThan(r.backspace, 3, "must not full-wipe three scalars when only suffix changes")
     }
 
     // MARK: - Commit
@@ -96,12 +236,7 @@ final class DauResultMapperTests: XCTestCase {
     func testCommitUnchangedSkipsRetype() {
         provisionalText = "tiếng"
         provisionalLength = "tiếng".unicodeScalars.count
-        let r = DauResultMapper.map(
-            action: DauAction_Commit,
-            text: "tiếng",
-            provisionalText: &provisionalText,
-            provisionalLength: &provisionalLength
-        )
+        let r = map(action: DauAction_Commit, text: "tiếng")
         XCTAssertEqual(r.backspace, 0)
         XCTAssertEqual(r.text, "")
         XCTAssertFalse(r.consumeOriginal) // forward break
@@ -112,12 +247,7 @@ final class DauResultMapperTests: XCTestCase {
     func testCommitChangedRewritesProvisional() {
         provisionalText = "hellô" // composed form that auto-restore may replace
         provisionalLength = provisionalText.unicodeScalars.count
-        let r = DauResultMapper.map(
-            action: DauAction_Commit,
-            text: "hello",
-            provisionalText: &provisionalText,
-            provisionalLength: &provisionalLength
-        )
+        let r = map(action: DauAction_Commit, text: "hello")
         XCTAssertEqual(r.backspace, "hellô".unicodeScalars.count)
         XCTAssertEqual(r.text, "hello")
         XCTAssertFalse(r.consumeOriginal)
@@ -128,15 +258,29 @@ final class DauResultMapperTests: XCTestCase {
     func testCommitEmptyWithProvisionalDeletesOnly() {
         provisionalText = "ab"
         provisionalLength = 2
-        let r = DauResultMapper.map(
-            action: DauAction_Commit,
-            text: "",
-            provisionalText: &provisionalText,
-            provisionalLength: &provisionalLength
-        )
+        let r = map(action: DauAction_Commit, text: "")
         XCTAssertEqual(r.backspace, 2)
         XCTAssertEqual(r.text, "")
         XCTAssertFalse(r.consumeOriginal)
+        XCTAssertEqual(provisionalLength, 0)
+    }
+
+    func testCommitAfterAppendEnglishDeleteForwardsSpaceOnce() {
+        var doc = FakeDocument()
+        for (preedit, key) in [
+            ("d", "d"), ("de", "e"), ("del", "l"),
+            ("dele", "e"), ("delet", "t"), ("delete", "e"),
+        ] {
+            let r = map(action: DauAction_UpdatePreedit, text: preedit)
+            doc.apply(result: r, originalKey: key)
+        }
+        XCTAssertEqual(doc.text, "delete")
+        let commit = map(action: DauAction_Commit, text: "delete")
+        doc.apply(result: commit, originalKey: " ")
+        XCTAssertEqual(commit.backspace, 0)
+        XCTAssertEqual(commit.text, "")
+        XCTAssertFalse(commit.consumeOriginal)
+        XCTAssertEqual(doc.text, "delete ")
         XCTAssertEqual(provisionalLength, 0)
     }
 
@@ -145,12 +289,7 @@ final class DauResultMapperTests: XCTestCase {
     func testRestoreUsesProvisionalLengthPlusRaw() {
         provisionalText = "tiếng"
         provisionalLength = "tiếng".unicodeScalars.count
-        let r = DauResultMapper.map(
-            action: DauAction_Restore,
-            text: "tieengs",
-            provisionalText: &provisionalText,
-            provisionalLength: &provisionalLength
-        )
+        let r = map(action: DauAction_Restore, text: "tieengs")
         XCTAssertEqual(r.backspace, "tiếng".unicodeScalars.count)
         XCTAssertEqual(r.text, "tieengs")
         XCTAssertTrue(r.consumeOriginal)
@@ -159,12 +298,7 @@ final class DauResultMapperTests: XCTestCase {
     }
 
     func testRestoreEmptyForwardsEsc() {
-        let r = DauResultMapper.map(
-            action: DauAction_Restore,
-            text: "",
-            provisionalText: &provisionalText,
-            provisionalLength: &provisionalLength
-        )
+        let r = map(action: DauAction_Restore, text: "")
         XCTAssertEqual(r.backspace, 0)
         XCTAssertEqual(r.text, "")
         XCTAssertFalse(r.consumeOriginal)
@@ -173,13 +307,7 @@ final class DauResultMapperTests: XCTestCase {
     // MARK: - capitalize_next passthrough
 
     func testCapitalizeNextEchoedNotUsedAsState() {
-        let r = DauResultMapper.map(
-            action: DauAction_Commit,
-            text: "A",
-            capitalizeNext: true,
-            provisionalText: &provisionalText,
-            provisionalLength: &provisionalLength
-        )
+        let r = map(action: DauAction_Commit, text: "A", capitalizeNext: true)
         XCTAssertTrue(r.capitalizeNext)
         // Mapper must not invent second capitalization state beyond the flag.
         XCTAssertEqual(provisionalLength, 0)
@@ -198,7 +326,25 @@ final class DauResultMapperTests: XCTestCase {
             provisionalText: &provisionalText,
             provisionalLength: &provisionalLength
         )
-        XCTAssertEqual(r.text, "ơ")
+        // First scalar: pass-through append.
+        XCTAssertEqual(r.text, "")
+        XCTAssertFalse(r.consumeOriginal)
+        XCTAssertEqual(provisionalText, "ơ")
         XCTAssertEqual(provisionalLength, 1)
+    }
+
+    // MARK: - Helpers
+
+    func testCommonPrefixScalarCount() {
+        XCTAssertEqual(DauResultMapper.commonPrefixScalarCount("tieen", "tiên"), 2)
+        XCTAssertEqual(DauResultMapper.commonPrefixScalarCount("", "a"), 0)
+        XCTAssertEqual(DauResultMapper.commonPrefixScalarCount("abc", "abc"), 3)
+        XCTAssertEqual(DauResultMapper.commonPrefixScalarCount("delet", "delete"), 5)
+    }
+
+    func testScalarSuffix() {
+        XCTAssertEqual(DauResultMapper.scalarSuffix("tiên", droppingFirst: 2), "ên")
+        XCTAssertEqual(DauResultMapper.scalarSuffix("a", droppingFirst: 0), "a")
+        XCTAssertEqual(DauResultMapper.scalarSuffix("ab", droppingFirst: 2), "")
     }
 }

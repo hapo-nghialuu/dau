@@ -1,5 +1,6 @@
 // Dấu macOS — map core DauResult → BridgeResult using provisional compose state.
 // WP-02 / plan §2.4. Backspace count is bridge-owned (not a core ABI field).
+// TG-02: UpdatePreedit uses minimal suffix delta; pure single-scalar append passes the original key.
 
 import Foundation
 
@@ -9,7 +10,7 @@ struct BridgeResult: Equatable {
     var backspace: Int
     var text: String
     /// When true, the original keyDown should be suppressed (consumed).
-    /// When false, forward the original event (e.g. break / empty Esc).
+    /// When false, forward the original event (e.g. break / empty Esc / plain append).
     var consumeOriginal: Bool
     /// Echo of core `capitalize_next` for tests / diagnostics (not used for re-casing).
     var capitalizeNext: Bool
@@ -33,6 +34,14 @@ enum DauResultMapper {
     ///   - provisionalText: last injected compose text (not yet committed).
     ///   - provisionalLength: `provisionalText.unicodeScalars.count`.
     /// - Returns: `BridgeResult` for the injector / event-tap consumer.
+    ///
+    /// ## UpdatePreedit contract (TG-02)
+    /// - **Plain append** (`new == old + one Unicode scalar`): update provisional, return
+    ///   `backspace = 0`, `text = ""`, `consumeOriginal = false` so the physical key reaches
+    ///   the app once (no synthetic Backspace N + full rewrite).
+    /// - **Transform** (tone/mark/shape changes earlier chars): delete only the changed
+    ///   suffix of provisional (`oldLen - commonPrefix`), inject only the new suffix.
+    /// - Multi-scalar pure append (rare): `backspace = 0`, inject new suffix, consume key.
     static func map(
         action: DauAction,
         text: String,
@@ -63,15 +72,12 @@ enum DauResultMapper {
             )
 
         case DauAction_UpdatePreedit:
-            let result = BridgeResult(
-                backspace: provisionalLength,
+            return mapUpdatePreedit(
                 text: text,
-                consumeOriginal: true,
-                capitalizeNext: capitalizeNext
+                capitalizeNext: capitalizeNext,
+                provisionalText: &provisionalText,
+                provisionalLength: &provisionalLength
             )
-            provisionalText = text
-            provisionalLength = text.unicodeScalars.count
-            return result
 
         case DauAction_Commit:
             // If committed text equals what is already on screen, skip delete/retype.
@@ -122,5 +128,83 @@ enum DauResultMapper {
             provisionalText: &provisionalText,
             provisionalLength: &provisionalLength
         )
+    }
+
+    // MARK: - UpdatePreedit delta
+
+    private static func mapUpdatePreedit(
+        text: String,
+        capitalizeNext: Bool,
+        provisionalText: inout String,
+        provisionalLength: inout Int
+    ) -> BridgeResult {
+        let oldText = provisionalText
+        let oldLen = provisionalLength
+        let newLen = text.unicodeScalars.count
+        let common = commonPrefixScalarCount(oldText, text)
+
+        // Pure single-scalar append: pass original key; document gets the physical char once.
+        if newLen == oldLen + 1, common == oldLen {
+            provisionalText = text
+            provisionalLength = newLen
+            return BridgeResult(
+                backspace: 0,
+                text: "",
+                consumeOriginal: false,
+                capitalizeNext: capitalizeNext
+            )
+        }
+
+        // Multi-scalar pure append (core grew display without rewriting prefix).
+        if newLen > oldLen, common == oldLen {
+            let suffix = scalarSuffix(text, droppingFirst: common)
+            provisionalText = text
+            provisionalLength = newLen
+            return BridgeResult(
+                backspace: 0,
+                text: suffix,
+                consumeOriginal: true,
+                capitalizeNext: capitalizeNext
+            )
+        }
+
+        // Transform / rewrite: only replace the changed suffix (not full provisional wipe).
+        let backspace = oldLen - common
+        let suffix = scalarSuffix(text, droppingFirst: common)
+        provisionalText = text
+        provisionalLength = newLen
+        return BridgeResult(
+            backspace: backspace,
+            text: suffix,
+            consumeOriginal: true,
+            capitalizeNext: capitalizeNext
+        )
+    }
+
+    /// Count of leading Unicode scalars shared by `a` and `b`.
+    static func commonPrefixScalarCount(_ a: String, _ b: String) -> Int {
+        let aScalars = a.unicodeScalars
+        let bScalars = b.unicodeScalars
+        var ai = aScalars.startIndex
+        var bi = bScalars.startIndex
+        var count = 0
+        while ai < aScalars.endIndex, bi < bScalars.endIndex, aScalars[ai] == bScalars[bi] {
+            count += 1
+            ai = aScalars.index(after: ai)
+            bi = bScalars.index(after: bi)
+        }
+        return count
+    }
+
+    /// Drop the first `n` Unicode scalars of `s` and return the remainder as `String`.
+    static func scalarSuffix(_ s: String, droppingFirst n: Int) -> String {
+        if n <= 0 { return s }
+        let scalars = s.unicodeScalars
+        if n >= scalars.count { return "" }
+        var idx = scalars.startIndex
+        for _ in 0..<n {
+            idx = scalars.index(after: idx)
+        }
+        return String(String.UnicodeScalarView(scalars[idx...]))
     }
 }

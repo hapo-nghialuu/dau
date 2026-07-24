@@ -120,13 +120,27 @@ final class TypingSessionTests: XCTestCase {
 
     // MARK: - Consume / pass
 
-    func testPrintableConsumesAndSchedulesInject() {
+    /// TG-02: plain single-scalar append passes the physical key (no synthetic inject).
+    func testPrintablePlainAppendPassesOriginal() {
+        let d = handle(printable("a"))
+        XCTAssertFalse(d.consumeOriginal)
+        XCTAssertFalse(d.injectScheduled)
+        XCTAssertEqual(d.result.backspace, 0)
+        XCTAssertEqual(d.result.text, "")
+        XCTAssertTrue(sink.commands.isEmpty)
+        XCTAssertEqual(session.provisionalLength, 1)
+    }
+
+    /// Transform path still consumes and injects minimal rewrite (e.g. a + a → â).
+    func testPrintableTransformConsumesAndSchedulesInject() {
+        _ = handle(printable("a"))
+        sink.reset()
         let d = handle(printable("a"))
         XCTAssertTrue(d.consumeOriginal)
         XCTAssertTrue(d.injectScheduled)
-        XCTAssertEqual(d.result.text, "a")
-        XCTAssertTrue(d.consumeOriginal)
-        XCTAssertEqual(sink.commands, [.unicodeChunk("a")])
+        XCTAssertEqual(d.result.backspace, 1)
+        XCTAssertEqual(d.result.text, "â")
+        XCTAssertEqual(sink.commands, [.backspace, .unicodeChunk("â")])
     }
 
     func testBoundaryPassesWithoutInject() {
@@ -271,13 +285,14 @@ final class TypingSessionTests: XCTestCase {
         XCTAssertTrue(sink.commands.isEmpty, "must not inject stale provisional on paste shortcut")
         XCTAssertEqual(session.provisionalLength, 0)
 
-        // Next word starts clean after paste boundary.
+        // Next word starts clean after paste boundary (plain append passes original).
         sink.reset()
         let next = handle(printable("a"))
-        XCTAssertTrue(next.consumeOriginal)
-        XCTAssertEqual(next.result.text, "a")
+        XCTAssertFalse(next.consumeOriginal)
+        XCTAssertEqual(next.result.text, "")
         XCTAssertEqual(next.result.backspace, 0)
-        XCTAssertEqual(sink.commands, [.unicodeChunk("a")])
+        XCTAssertTrue(sink.commands.isEmpty)
+        XCTAssertEqual(session.provisionalLength, 1)
     }
 
     // MARK: - None wipe while composing
@@ -312,8 +327,10 @@ final class TypingSessionTests: XCTestCase {
 
     func testAsyncInjectMaySleepButMapReturnedAlready() {
         session.setDelays(DelayPreset(backspaceUs: 100, settleUs: 200, textUs: 300))
+        // Need a transform inject (plain append no longer schedules inject).
+        _ = handle(printable("a"))
         sleeper.reset()
-        let d = handle(printable("a"))
+        let d = handle(printable("a")) // a→â
         XCTAssertTrue(d.consumeOriginal)
         XCTAssertTrue(d.injectScheduled)
         // After inject completed, sleeper recorded delays (async path only).
@@ -345,7 +362,10 @@ final class TypingSessionTests: XCTestCase {
     }
 
     /// Zero-delay path: sink failure after map → fail-open (pass original + clear compose).
+    /// Uses transform inject (a→â) because plain append no longer schedules inject (TG-02).
     func testZeroDelaySinkFailureFailOpenDoesNotConsume() {
+        _ = handle(printable("a"))
+        sink.reset()
         sink.shouldSucceed = false
         var injectResult: Result<Void, InjectionError>?
         let exp = expectation(description: "inject-failed")
@@ -353,7 +373,7 @@ final class TypingSessionTests: XCTestCase {
             injectResult = result
             exp.fulfill()
         }
-        let d = session.handleKey(printable("a"))
+        let d = session.handleKey(printable("a")) // transform → inject path
         wait(for: [exp], timeout: 1.0)
         session.onInjectCompleted = nil
 
@@ -369,22 +389,25 @@ final class TypingSessionTests: XCTestCase {
         sink.shouldSucceed = true
         sink.reset()
         let next = handle(printable("b"))
-        XCTAssertTrue(next.consumeOriginal)
-        XCTAssertEqual(next.result.text, "b")
-        XCTAssertEqual(sink.commands, [.unicodeChunk("b")])
+        XCTAssertFalse(next.consumeOriginal, "plain append passes original")
+        XCTAssertEqual(next.result.text, "")
+        XCTAssertTrue(sink.commands.isEmpty)
+        XCTAssertEqual(session.provisionalLength, 1)
     }
 
     /// Zero-delay success still runs inject before decision returns (sync path).
     func testZeroDelayInjectCompletesBeforeHandleKeyReturns() {
+        _ = handle(printable("a"))
+        sink.reset()
         var completedBeforeReturn = false
         session.onInjectCompleted = { _ in
             completedBeforeReturn = true
         }
-        let d = session.handleKey(printable("x"))
+        let d = session.handleKey(printable("a")) // a→â transform inject
         session.onInjectCompleted = nil
         XCTAssertTrue(d.consumeOriginal)
         XCTAssertTrue(d.injectScheduled)
         XCTAssertTrue(completedBeforeReturn, "zero-delay inject must finish before EventTap gets decision")
-        XCTAssertEqual(sink.commands, [.unicodeChunk("x")])
+        XCTAssertEqual(sink.commands, [.backspace, .unicodeChunk("â")])
     }
 }
