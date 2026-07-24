@@ -37,8 +37,8 @@ Logic gõ tách khỏi Fcitx5 để unit test bằng C++ (`ctest`) và Rust (`ca
 
 ### Phạm vi v1
 
-- **Linux + Fcitx5** — fully supported  
-- **macOS** — roadmap (cùng core, bridge khác)  
+- **Linux + Fcitx5** — fully supported (v0.1)  
+- **macOS** — CGEventTap + Swift menu-bar bridge **đang triển khai** (`platforms/macos/`; xem [project-anchor §8.6](project-anchor.md))  
 - Không đụng Windows trong v1
 
 ## Cấu trúc thư mục
@@ -54,7 +54,12 @@ dau/
 │   ├── data/             # dau.conf, dau-addon.conf, icons
 │   ├── tests/            # typing_controller, strategy_resolver
 │   └── CMakeLists.txt
+├── platforms/macos/      # CGEventTap + Swift menu bar (in progress)
+│   ├── Sources/          # app, bridge, input, output, session, ui, config
+│   ├── Tests/            # unit tests (no live CGEvent posts)
+│   └── Dau.xcodeproj/
 ├── scripts/              # build / install / uninstall / check-metadata
+│   └── build/macos.sh    # core staticlib + xcodebuild
 ├── docs/                 # tài liệu sản phẩm + neo
 ├── assets/               # logo, icon nguồn
 ├── Makefile
@@ -84,6 +89,24 @@ make build-addon            # alias script
 ```
 
 Trên macOS / thiếu fcitx5-dev: script chỉ build core và in cảnh báo (exit 0).
+
+### macOS (`platforms/macos`)
+
+CGEventTap bridge + Swift menu-bar app, link `dau-core` qua C ABI. Chi tiết: [`platforms/macos/README.md`](../platforms/macos/README.md).
+
+```bash
+./scripts/build/macos.sh --debug    # cargo debug + xcodebuild Debug
+./scripts/build/macos.sh --adhoc    # release + ad-hoc codesign
+```
+
+```bash
+xcodebuild test \
+  -project platforms/macos/Dau.xcodeproj \
+  -scheme Dau \
+  -destination 'platform=macOS'
+```
+
+Artifact: `platforms/macos/build/Debug/Dau.app` (hoặc `Release/`). Cần **Accessibility** (TCC) khi chạy.
 
 ### Cài / gỡ
 
@@ -146,7 +169,7 @@ docs: install-linux troubleshooting
 chore(scripts): portable dry-run on macOS
 ```
 
-Gợi ý scope: `core`, `linux`, `ffi`, `docs`, `scripts`, `ci`.
+Gợi ý scope: `core`, `linux`, `macos`, `ffi`, `docs`, `scripts`, `ci`.
 
 - Một commit = một ý thay đổi rõ ràng  
 - Không commit secret (`.env`, key)  

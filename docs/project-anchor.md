@@ -1,6 +1,7 @@
 # Dấu — Tài liệu neo (Source of Truth)
 
-> **Trạng thái:** Ý tưởng / định vị · **Ngày tạo:** 2026-07-21 · **Chưa viết code.**
+> **Trạng thái:** Đang triển khai · **Ngày tạo:** 2026-07-21 · **Cập nhật:** 2026-07-24.
+> **Code:** Linux Fcitx5 bridge + `dau-core` **v0.1** đã có; macOS bridge (CGEventTap + Swift menu bar) **đang làm** trên `platforms/macos/`. Không còn giai đoạn “chưa viết code”.
 > Đây là tài liệu **neo** — nguồn chân lý cho tầm nhìn, phạm vi, và quyết định kiến trúc cấp cao của dự án Dấu. Mọi spec/task/PR về sau phải nhất quán với tài liệu này. Khi một quyết định ở đây thay đổi, cập nhật tại đây trước.
 
 ---
@@ -79,8 +80,8 @@ Triết lý: **Cài là dùng.** Nhanh, ổn định, quen thuộc như UniKey n
    ┌───────────┴───────────┐
    │                       │
  Linux                   macOS
- Fcitx5 addon            CGEventTap / Input Method Kit
- (C++ bridge)            (Swift bridge)
+ Fcitx5 addon            CGEventTap primary
+ (C++ bridge)            (Swift menu-bar / accessory)
    │                       │
    └───────────┬───────────┘
                │  FFI (C ABI)
@@ -102,10 +103,17 @@ Triết lý: **Cài là dùng.** Nhanh, ổn định, quen thuộc như UniKey n
 | **Ngôn ngữ core** | **Rust** (zero production dep) | An toàn bộ nhớ, <1ms, bind cả 2 OS qua FFI C ABI |
 | **FFI interface** | Hàm kiểu `ime_key(...) -> Result` | `Result` `#[repr(C)]`: `chars[u32;N]`, `action`, `backspace`, `count`. Bridge phải khớp byte-for-byte |
 | **Linux bridge** | **Fcitx5-only** (C++ addon) — đã chốt | X11 + Wayland; IBus = fast-follow sau v1 |
-| **macOS bridge** | Nghiêng **CGEventTap** + SwiftUI | Phủ terminal tốt (gonhanh đã chứng minh); xác nhận lại khi vào phase 2 |
+| **macOS bridge** | **CGEventTap primary** + Swift menu bar / accessory app — đã chốt (2026-07-24) | **IMK không phải primary.** AX chỉ cho onboarding, app context và full-parity injection fallback |
 | **Ưu tiên build** | **Linux trước → macOS sau** | Ngược với gonhanh (họ macOS trước) |
 | **Gửi text** | 2 method: Backspace / Selection | Chọn theo app qua Accessibility/context |
 | **Config** | File **TOML**, core Rust parse | Linux: `~/.config/dau/` (XDG); macOS: `~/Library/Application Support/dau/`. Một format, hai đường dẫn chuẩn OS — không phụ thuộc dconf |
+
+**Ghi chú macOS bridge (đã chốt cùng §8.6):**
+
+- **C ABI không đổi** ở MVP: dùng nguyên `DauAction` + UTF-32 `chars` từ `dau_core.h`. Swift map text hiện tại; **số backspace là provisional do bridge đếm** từ output đã inject — **không thêm `backspace` vào `DauResult` ở MVP**.
+- Injection method / delay / AX role thuộc trách nhiệm bridge macOS; core vẫn không biết app hay terminal.
+- Engine config vẫn TOML qua `dau_load_config`. Profile injection macOS-only (per-app method/delay) lưu bridge-owned state (`UserDefaults` / shipped `profiles.toml`) cho đến khi có quyết định FFI/config snapshot riêng.
+- Chi tiết build/dev: `platforms/macos/README.md`, `scripts/build/macos.sh`.
 
 ### 4.2. Core pipeline (tham khảo gonhanh, sẽ tinh chỉnh)
 7 giai đoạn *validation-first* (kiểm tra âm tiết hợp lệ **trước khi** biến đổi):
@@ -167,8 +175,19 @@ Triết lý: **Cài là dùng.** Nhanh, ổn định, quen thuộc như UniKey n
 ### Còn mở (đã thống nhất cách giải)
 4. Cơ chế **per-app delay / tự thích nghi cho AI CLI** → **đề tài brainstorm đầu tiên** (điểm khác biệt cốt lõi, cần R&D riêng).
 5. Wayland input method protocol đủ khả năng như X11 không? → **spike kỹ thuật số 1** khi bắt đầu code.
-6. macOS (phase 2) đi đường nào: nghiêng **CGEventTap** (phủ terminal tốt, gonhanh đã chứng minh) — xác nhận lại khi vào phase 2.
+6. ~~macOS bridge: CGEventTap hay IMK?~~ → **đã chốt CGEventTap primary** (xem §8.6, 2026-07-24).
 7. Ma trận hỗ trợ IME của các terminal Linux (VTE/Konsole/Kitty/Alacritty/Ghostty) — khảo sát thực tế trong spike Wayland.
+
+### 8.6. Quyết định macOS bridge (2026-07-24)
+
+Decision register — **locked** (đồng bộ plan `plans/macos-eventtap-parity.md` §10):
+
+1. **Q1** → **CGEventTap** là primary path; **IMK / Input Method Kit không phải primary**.
+2. **Q2** → **Terminal và AI CLI là north star**; MVP macOS phải có terminal vertical slice (gõ Telex/VNI trong Terminal/iTerm/AI CLI).
+3. **Q3** → Hai release path đều supported: **dev ad-hoc + Accessibility (TCC user grant)** và **public Developer ID + notarize** (P4).
+4. **Q4** → **Full parity Gõ Nhanh theo phase**: menu bar, injection matrix, per-app enabled/method/delay, AX onboarding/context, input-source gating, watchdog/recovery — không one-shot.
+5. Tham khảo `~/Desktop/gonhanh.org` **chỉ ở mức pattern / kiến trúc**; Dấu **tự viết**, **không copy/fork** code gonhanh.
+6. **`DauResult` / C ABI không thêm field `backspace` ở MVP**; bridge tính provisional backspace count từ output đã inject. Chỉ mở rộng C ABI khi có failing evidence từ case đã cam kết (P0).
 
 ---
 
