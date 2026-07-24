@@ -1,5 +1,6 @@
 // Dấu macOS — TextInjector: replacement sequencing (WP-03).
 // Posts Backspace + Unicode via a pluggable EventSink; never logs text content.
+// Dead-key guard: sink reports post failures; session must fail-open (not consume) when inject cannot run.
 
 import CoreGraphics
 import Foundation
@@ -20,6 +21,54 @@ enum SyntheticEventMarker {
     }
 }
 
+// MARK: - Post-event access (dead-key preflight)
+
+/// Gate for synthetic keyboard posts. When false, TypingSession must not consume originals.
+enum SyntheticPostAccess {
+    /// Production: `CGPreflightPostEventAccess()` (+ one optional `CGRequestPostEventAccess`).
+    /// Overridable in unit tests.
+    static var check: () -> Bool = defaultCheck
+
+    private static let requestLock = NSLock()
+    /// At most one OS request prompt per process lifetime.
+    private static var didRequestOnce = false
+
+    static var isGranted: Bool { check() }
+
+    static func resetToDefault() {
+        check = defaultCheck
+        requestLock.lock()
+        didRequestOnce = false
+        requestLock.unlock()
+    }
+
+    private static func defaultCheck() -> Bool {
+        if #available(macOS 10.15, *) {
+            if CGPreflightPostEventAccess() {
+                return true
+            }
+            requestLock.lock()
+            let shouldRequest = !didRequestOnce
+            if shouldRequest {
+                didRequestOnce = true
+            }
+            requestLock.unlock()
+            if shouldRequest {
+                fputs("[dau] post-event access denied; requesting once\n", stderr)
+                _ = CGRequestPostEventAccess()
+                if CGPreflightPostEventAccess() {
+                    fputs("[dau] post-event access granted after request\n", stderr)
+                    return true
+                }
+            }
+            fputs("[dau] post-event access denied\n", stderr)
+            return false
+        }
+        // Pre-10.15: no separate post-access API; Accessibility trust is the practical gate.
+        return true
+    }
+}
+
 // MARK: - Command plan
 
 /// Ordered injector steps. Unit tests assert plan shape without posting real keys.
@@ -37,44 +86,62 @@ enum InjectionError: Error, Equatable, Sendable {
     case invalidBackspaceCount
     case unsupportedMethod(InjectionMethod)
     case sinkFailed(String)
+    /// OS denied synthetic keyboard posts (`CGPreflightPostEventAccess` false).
+    case postAccessDenied
 }
 
 // MARK: - Event sink (testable)
 
 /// Abstraction over posting keyboard/text events. Production uses CGEvent; tests use a recorder.
+/// Return `false` when the OS event could not be created/posted so callers can fail-open.
 protocol InjectorEventSink: AnyObject {
-    func postBackspace()
-    func postUnicode(_ text: String)
-    func postShiftLeft()
-    func postEmptyPrefix()
+    @discardableResult
+    func postBackspace() -> Bool
+    @discardableResult
+    func postUnicode(_ text: String) -> Bool
+    @discardableResult
+    func postShiftLeft() -> Bool
+    @discardableResult
+    func postEmptyPrefix() -> Bool
 }
 
 /// Records sink calls for unit tests (command ordering without CGEvent / Accessibility).
 final class RecordingEventSink: InjectorEventSink {
     private(set) var commands: [InjectorCommand] = []
+    /// When false, posts still record but report failure (dead-key regression tests).
+    var shouldSucceed: Bool = true
 
     func reset() {
         commands.removeAll(keepingCapacity: true)
     }
 
-    func postBackspace() {
+    @discardableResult
+    func postBackspace() -> Bool {
         commands.append(.backspace)
+        return shouldSucceed
     }
 
-    func postUnicode(_ text: String) {
+    @discardableResult
+    func postUnicode(_ text: String) -> Bool {
         commands.append(.unicodeChunk(text))
+        return shouldSucceed
     }
 
-    func postShiftLeft() {
+    @discardableResult
+    func postShiftLeft() -> Bool {
         commands.append(.shiftLeft)
+        return shouldSucceed
     }
 
-    func postEmptyPrefix() {
+    @discardableResult
+    func postEmptyPrefix() -> Bool {
         commands.append(.emptyPrefix)
+        return shouldSucceed
     }
 }
 
-/// Production sink: HID-level CGEvent keyboard posts with synthetic marker.
+/// Production sink: CGEvent keyboard posts with synthetic marker.
+/// Prefer HID; fall back to session tap when event creation for HID path fails.
 final class CGEventInjectorSink: InjectorEventSink {
     /// Virtual key code for Delete/Backspace (Carbon `kVK_Delete`).
     private static let backspaceKeyCode: CGKeyCode = 51
@@ -83,53 +150,80 @@ final class CGEventInjectorSink: InjectorEventSink {
     /// Narrow no-break space (U+202F) used by empty-char-prefix method.
     private static let emptyPrefixScalar: Unicode.Scalar = "\u{202F}"
 
-    func postBackspace() {
-        postKey(Self.backspaceKeyCode, keyDown: true)
-        postKey(Self.backspaceKeyCode, keyDown: false)
+    @discardableResult
+    func postBackspace() -> Bool {
+        let down = postKey(Self.backspaceKeyCode, keyDown: true)
+        let up = postKey(Self.backspaceKeyCode, keyDown: false)
+        return down && up
     }
 
-    func postUnicode(_ text: String) {
-        guard !text.isEmpty else { return }
-        postUnicodeString(text)
+    @discardableResult
+    func postUnicode(_ text: String) -> Bool {
+        guard !text.isEmpty else { return true }
+        return postUnicodeString(text)
     }
 
-    func postShiftLeft() {
-        postKey(Self.leftArrowKeyCode, keyDown: true, flags: .maskShift)
-        postKey(Self.leftArrowKeyCode, keyDown: false, flags: .maskShift)
+    @discardableResult
+    func postShiftLeft() -> Bool {
+        let down = postKey(Self.leftArrowKeyCode, keyDown: true, flags: .maskShift)
+        let up = postKey(Self.leftArrowKeyCode, keyDown: false, flags: .maskShift)
+        return down && up
     }
 
-    func postEmptyPrefix() {
+    @discardableResult
+    func postEmptyPrefix() -> Bool {
         postUnicodeString(String(Self.emptyPrefixScalar))
     }
 
-    private func postKey(_ keyCode: CGKeyCode, keyDown: Bool, flags: CGEventFlags = []) {
-        let source = CGEventSource(stateID: .hidSystemState)
-        guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: keyDown) else {
-            return
+    @discardableResult
+    private func postKey(_ keyCode: CGKeyCode, keyDown: Bool, flags: CGEventFlags = []) -> Bool {
+        // HID first; session state as create fallback (some environments fail HID source).
+        let attempts: [(CGEventSourceStateID, CGEventTapLocation)] = [
+            (.hidSystemState, .cghidEventTap),
+            (.combinedSessionState, .cgSessionEventTap),
+        ]
+        for (state, location) in attempts {
+            let source = CGEventSource(stateID: state)
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: keyDown) else {
+                continue
+            }
+            if !flags.isEmpty {
+                event.flags = flags
+            }
+            SyntheticEventMarker.apply(to: event)
+            event.post(tap: location)
+            return true
         }
-        if !flags.isEmpty {
-            event.flags = flags
-        }
-        SyntheticEventMarker.apply(to: event)
-        event.post(tap: .cghidEventTap)
+        return false
     }
 
-    private func postUnicodeString(_ text: String) {
-        let source = CGEventSource(stateID: .hidSystemState)
+    @discardableResult
+    private func postUnicodeString(_ text: String) -> Bool {
         var utf16 = Array(text.utf16)
         let length = utf16.count
-        guard length > 0 else { return }
+        guard length > 0 else { return true }
 
-        if let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true) {
+        let attempts: [(CGEventSourceStateID, CGEventTapLocation)] = [
+            (.hidSystemState, .cghidEventTap),
+            (.combinedSessionState, .cgSessionEventTap),
+        ]
+        for (state, location) in attempts {
+            let source = CGEventSource(stateID: state)
+            // Both down+up must be created; partial post would leave stuck keys.
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
+            else {
+                continue
+            }
             down.keyboardSetUnicodeString(stringLength: length, unicodeString: &utf16)
-            SyntheticEventMarker.apply(to: down)
-            down.post(tap: .cghidEventTap)
-        }
-        if let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) {
             up.keyboardSetUnicodeString(stringLength: length, unicodeString: &utf16)
+            SyntheticEventMarker.apply(to: down)
             SyntheticEventMarker.apply(to: up)
-            up.post(tap: .cghidEventTap)
+            down.post(tap: location)
+            up.post(tap: location)
+            return true
         }
+        return false
     }
 }
 
@@ -222,6 +316,7 @@ final class TextInjector {
     }
 
     /// Inject replacement. Safe for concurrent callers (serialized). Never logs `text`.
+    /// Returns `.failure` when post access is denied or a sink post cannot create events.
     @discardableResult
     func inject(
         backspace: Int,
@@ -236,13 +331,15 @@ final class TextInjector {
         lock.lock()
         defer { lock.unlock() }
 
+        let textLen = text.unicodeScalars.count
         // Metadata only: method + counts + delay numbers. No text content.
-        onMetadata?(
-            "inject method=\(method.rawValue) bs=\(backspace) textLen=\(text.unicodeScalars.count) " +
+        let meta =
+            "method=\(method.rawValue) bs=\(backspace) textLen=\(textLen) " +
             "delays=(\(delays.backspaceUs),\(delays.settleUs),\(delays.textUs))"
-        )
+        onMetadata?("inject \(meta)")
 
         if method == .passthrough {
+            logInjectResult(meta: meta, ok: true, detail: "passthrough")
             return .success(())
         }
 
@@ -254,7 +351,8 @@ final class TextInjector {
             )
             switch axResult {
             case .success:
-                onMetadata?("inject axDirect=ok textLen=\(text.unicodeScalars.count)")
+                onMetadata?("inject axDirect=ok textLen=\(textLen)")
+                logInjectResult(meta: meta, ok: true, detail: "axDirect")
                 return .success(())
             case .failure(let err):
                 onMetadata?("inject axDirect=fallback error=\(err)")
@@ -267,9 +365,29 @@ final class TextInjector {
             onMetadata?("inject syncProxy=stub_fallback")
         }
 
+        // Preflight before any destructive sequence (BS + text). Avoid partial wipe.
+        guard SyntheticPostAccess.isGranted else {
+            onMetadata?("inject postAccess=denied")
+            logInjectResult(meta: meta, ok: false, detail: "postAccessDenied")
+            return .failure(.postAccessDenied)
+        }
+
         let commands = plan(backspace: backspace, text: text, method: method, delays: delays)
-        execute(commands)
-        return .success(())
+        let result = execute(commands)
+        switch result {
+        case .success:
+            logInjectResult(meta: meta, ok: true, detail: "posted")
+        case .failure(let err):
+            logInjectResult(meta: meta, ok: false, detail: "\(err)")
+        }
+        return result
+    }
+
+    /// Stderr metadata only — never raw key or text content.
+    private func logInjectResult(meta: String, ok: Bool, detail: String) {
+        let line = "[dau] inject \(meta) post=\(ok ? "ok" : "fail") detail=\(detail)\n"
+        fputs(line, stderr)
+        onMetadata?(line.trimmingCharacters(in: .newlines))
     }
 
     // MARK: Planning helpers
@@ -361,20 +479,38 @@ final class TextInjector {
 
     // MARK: Execution
 
-    private func execute(_ commands: [InjectorCommand]) {
+    private func execute(_ commands: [InjectorCommand]) -> Result<Void, InjectionError> {
         for command in commands {
+            let ok: Bool
             switch command {
             case .backspace:
-                sink.postBackspace()
+                ok = sink.postBackspace()
             case .unicodeChunk(let chunk):
-                sink.postUnicode(chunk)
+                ok = sink.postUnicode(chunk)
             case .wait(let us):
                 sleeper.sleep(microseconds: us)
+                ok = true
             case .shiftLeft:
-                sink.postShiftLeft()
+                ok = sink.postShiftLeft()
             case .emptyPrefix:
-                sink.postEmptyPrefix()
+                ok = sink.postEmptyPrefix()
             }
+            if !ok {
+                onMetadata?("inject sink_failed command=\(commandLabel(command))")
+                return .failure(.sinkFailed(commandLabel(command)))
+            }
+        }
+        return .success(())
+    }
+
+    /// Metadata-safe label (no text content).
+    private func commandLabel(_ command: InjectorCommand) -> String {
+        switch command {
+        case .backspace: return "backspace"
+        case .unicodeChunk(let s): return "unicodeChunk(len=\(s.unicodeScalars.count))"
+        case .wait(let us): return "wait(\(us))"
+        case .shiftLeft: return "shiftLeft"
+        case .emptyPrefix: return "emptyPrefix"
         }
     }
 }

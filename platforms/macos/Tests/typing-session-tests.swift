@@ -13,6 +13,8 @@ final class TypingSessionTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
+        // Unit tests never exercise real CGEvent posts; always grant synthetic post access.
+        SyntheticPostAccess.check = { true }
         sink = RecordingEventSink()
         sleeper = RecordingInjectorSleeper()
         bridge = DauCoreBridge(method: DauMethod_Telex)
@@ -37,6 +39,7 @@ final class TypingSessionTests: XCTestCase {
         bridge = nil
         sleeper = nil
         sink = nil
+        SyntheticPostAccess.resetToDefault()
         super.tearDown()
     }
 
@@ -327,5 +330,61 @@ final class TypingSessionTests: XCTestCase {
         XCTAssertEqual(session.currentInjectionMethod(), .backspaceSlow)
         XCTAssertEqual(session.currentDelays(), .slow)
         XCTAssertTrue(session.isTypingEnabled())
+    }
+
+    // MARK: - Dead-key inject fail-open
+
+    /// Without synthetic post access, VI must not consume — original key must pass (no dead key).
+    func testPostAccessDeniedFailOpenDoesNotConsume() {
+        SyntheticPostAccess.check = { false }
+        let d = handle(printable("a"))
+        XCTAssertFalse(d.consumeOriginal, "must pass original when inject cannot post")
+        XCTAssertFalse(d.injectScheduled)
+        XCTAssertEqual(session.provisionalLength, 0)
+        XCTAssertTrue(sink.commands.isEmpty)
+    }
+
+    /// Zero-delay path: sink failure after map → fail-open (pass original + clear compose).
+    func testZeroDelaySinkFailureFailOpenDoesNotConsume() {
+        sink.shouldSucceed = false
+        var injectResult: Result<Void, InjectionError>?
+        let exp = expectation(description: "inject-failed")
+        session.onInjectCompleted = { result in
+            injectResult = result
+            exp.fulfill()
+        }
+        let d = session.handleKey(printable("a"))
+        wait(for: [exp], timeout: 1.0)
+        session.onInjectCompleted = nil
+
+        XCTAssertFalse(d.consumeOriginal, "dead-key guard: pass original after inject failure")
+        XCTAssertTrue(d.injectScheduled, "inject was attempted")
+        if case .failure = injectResult {
+            // expected
+        } else {
+            XCTFail("expected inject failure, got \(String(describing: injectResult))")
+        }
+        XCTAssertEqual(session.provisionalLength, 0, "compose cleared after fail-open")
+        // Next key must not be stuck on stale provisional from the failed path.
+        sink.shouldSucceed = true
+        sink.reset()
+        let next = handle(printable("b"))
+        XCTAssertTrue(next.consumeOriginal)
+        XCTAssertEqual(next.result.text, "b")
+        XCTAssertEqual(sink.commands, [.unicodeChunk("b")])
+    }
+
+    /// Zero-delay success still runs inject before decision returns (sync path).
+    func testZeroDelayInjectCompletesBeforeHandleKeyReturns() {
+        var completedBeforeReturn = false
+        session.onInjectCompleted = { _ in
+            completedBeforeReturn = true
+        }
+        let d = session.handleKey(printable("x"))
+        session.onInjectCompleted = nil
+        XCTAssertTrue(d.consumeOriginal)
+        XCTAssertTrue(d.injectScheduled)
+        XCTAssertTrue(completedBeforeReturn, "zero-delay inject must finish before EventTap gets decision")
+        XCTAssertEqual(sink.commands, [.unicodeChunk("x")])
     }
 }
