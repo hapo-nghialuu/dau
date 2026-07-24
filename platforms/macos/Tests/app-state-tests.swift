@@ -1,30 +1,140 @@
-// Dấu macOS — AppState menu labels / engine mapping (WP-06).
+// Dấu macOS — AppState menu icon / label mapping (MENU-02).
 
 import XCTest
 
 final class AppStateTests: XCTestCase {
-    func testMenuBarTitleVIEN() {
-        let state = AppState()
+    private func makeTrustedRunning(state: AppState) {
         state.accessibilityTrusted = true
+        state.eventTapRunning = true
         state.inputSourceBlocked = false
-        state.typingEnabled = true
-        XCTAssertEqual(state.menuBarTitle, "VI")
-        state.typingEnabled = false
-        XCTAssertEqual(state.menuBarTitle, "EN")
     }
 
-    func testMenuBarTitleNeedsAX() {
+    // MARK: - Icon state mapping
+
+    func testIconStateSetupWhenNotTrusted() {
         let state = AppState()
         state.accessibilityTrusted = false
-        XCTAssertEqual(state.menuBarTitle, "Dấu?")
+        state.eventTapRunning = false
+        state.typingEnabled = true
+        XCTAssertEqual(state.menuBarIconState, .setup)
+        XCTAssertEqual(state.menuBarIconState.assetName, "MenuBarSetup")
     }
 
-    func testMenuBarTitleBlocked() {
+    func testIconStateSetupWhenTrustedButTapStopped() {
         let state = AppState()
         state.accessibilityTrusted = true
-        state.inputSourceBlocked = true
-        XCTAssertEqual(state.menuBarTitle, "—")
+        state.eventTapRunning = false
+        state.typingEnabled = true
+        state.inputSourceBlocked = false
+        // Tap failed / stopped must not look like active VI.
+        XCTAssertEqual(state.menuBarIconState, .setup)
+        XCTAssertNotEqual(state.menuBarIconState, .active)
+        XCTAssertEqual(state.menuBarIconState.assetName, "MenuBarSetup")
     }
+
+    func testIconStateActiveVI() {
+        let state = AppState()
+        makeTrustedRunning(state: state)
+        state.typingEnabled = true
+        XCTAssertEqual(state.menuBarIconState, .active)
+        XCTAssertEqual(state.menuBarIconState.assetName, "MenuBarActive")
+    }
+
+    func testIconStateInactiveEN() {
+        let state = AppState()
+        makeTrustedRunning(state: state)
+        state.typingEnabled = false
+        XCTAssertEqual(state.menuBarIconState, .inactive)
+        XCTAssertEqual(state.menuBarIconState.assetName, "MenuBarInactive")
+        XCTAssertNotEqual(state.menuBarIconState, .active)
+    }
+
+    func testIconStateBlockedNotActive() {
+        let state = AppState()
+        makeTrustedRunning(state: state)
+        state.typingEnabled = true
+        state.inputSourceBlocked = true
+        // Blocked must never map to active VI icon.
+        XCTAssertEqual(state.menuBarIconState, .inactive)
+        XCTAssertNotEqual(state.menuBarIconState, .active)
+        XCTAssertEqual(state.menuBarIconState.assetName, "MenuBarInactive")
+    }
+
+    func testIconStateBlockedWinsOverTypingEnabled() {
+        let state = AppState()
+        makeTrustedRunning(state: state)
+        state.typingEnabled = true
+        state.inputSourceBlocked = true
+        XCTAssertEqual(state.menuBarIconState, .inactive)
+
+        state.typingEnabled = false
+        state.inputSourceBlocked = true
+        XCTAssertEqual(state.menuBarIconState, .inactive)
+    }
+
+    // MARK: - Title empty + toolTip / a11y labels
+
+    func testMenuBarTitleIsEmpty() {
+        let state = AppState()
+        makeTrustedRunning(state: state)
+        state.typingEnabled = true
+        XCTAssertEqual(state.menuBarTitle, "")
+
+        state.accessibilityTrusted = false
+        XCTAssertEqual(state.menuBarTitle, "")
+    }
+
+    func testToolTipAndAccessibilityForSetup() {
+        let state = AppState()
+        state.accessibilityTrusted = false
+        state.eventTapRunning = false
+        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — cần setup")
+        XCTAssertTrue(state.menuBarToolTip.contains("cần setup"))
+    }
+
+    func testToolTipAndAccessibilityForTapStopped() {
+        let state = AppState()
+        state.accessibilityTrusted = true
+        state.eventTapRunning = false
+        XCTAssertEqual(state.menuBarIconState, .setup)
+        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — cần setup")
+        XCTAssertTrue(state.menuBarToolTip.contains("event tap"))
+    }
+
+    func testToolTipAndAccessibilityForVI() {
+        let state = AppState()
+        makeTrustedRunning(state: state)
+        state.typingEnabled = true
+        XCTAssertEqual(state.menuBarToolTip, "Dấu — VI")
+        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — VI")
+    }
+
+    func testToolTipAndAccessibilityForEN() {
+        let state = AppState()
+        makeTrustedRunning(state: state)
+        state.typingEnabled = false
+        XCTAssertEqual(state.menuBarToolTip, "Dấu — EN")
+        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — EN")
+    }
+
+    func testToolTipAndAccessibilityForBlocked() {
+        let state = AppState()
+        makeTrustedRunning(state: state)
+        state.typingEnabled = true
+        state.inputSourceBlocked = true
+        XCTAssertTrue(state.menuBarToolTip.contains("tạm tắt"))
+        XCTAssertEqual(state.menuBarAccessibilityLabel, "Dấu — tạm tắt")
+    }
+
+    // MARK: - Asset name table (stable contract for menu bar controller)
+
+    func testAssetNamesStable() {
+        XCTAssertEqual(MenuBarIconState.setup.assetName, "MenuBarSetup")
+        XCTAssertEqual(MenuBarIconState.active.assetName, "MenuBarActive")
+        XCTAssertEqual(MenuBarIconState.inactive.assetName, "MenuBarInactive")
+    }
+
+    // MARK: - Engine mapping (unchanged)
 
     func testEngineMethodMapsToDauMethod() {
         XCTAssertEqual(AppEngineMethod.telex.asDauMethod, DauMethod_Telex)

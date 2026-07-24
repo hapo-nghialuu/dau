@@ -1,4 +1,4 @@
-// Dấu macOS — published app settings / runtime status (WP-06).
+// Dấu macOS — published app settings / runtime status (WP-06 / MENU-02).
 // UI (menu bar / onboarding) observes this; does not own the event-tap callback.
 
 import Combine
@@ -27,6 +27,25 @@ enum AppEngineMethod: String, Codable, CaseIterable, Sendable, Equatable {
         switch self {
         case .telex: return "Telex"
         case .vni: return "VNI"
+        }
+    }
+}
+
+/// Semantic status-item visual state (MENU-02). Maps to template images in Assets.xcassets.
+enum MenuBarIconState: String, Sendable, Equatable, CaseIterable {
+    /// Accessibility chưa trust, hoặc event tap không chạy — không nhìn như VI active.
+    case setup
+    /// Đang gõ tiếng Việt (VI), trusted + tap running + không bị block.
+    case active
+    /// EN / input source blocked / không inject — không nhìn như VI active.
+    case inactive
+
+    /// Asset catalog imageset name (`MenuBarSetup` / `MenuBarActive` / `MenuBarInactive`).
+    var assetName: String {
+        switch self {
+        case .setup: return "MenuBarSetup"
+        case .active: return "MenuBarActive"
+        case .inactive: return "MenuBarInactive"
         }
     }
 }
@@ -61,14 +80,52 @@ final class AppState: ObservableObject {
         return "Dấu \(marketing) · core \(core)"
     }
 
-    /// Menu bar title: VI / EN (and optional blocked marker).
-    var menuBarTitle: String {
-        if !accessibilityTrusted {
-            return "Dấu?"
+    /// Visible status-item title must stay empty; icon carries the state (MENU-02).
+    var menuBarTitle: String { "" }
+
+    /// Icon state: setup before active VI; blocked/tap-failed never map to `.active`.
+    var menuBarIconState: MenuBarIconState {
+        // Setup incomplete: no AX trust, or tap not running after trust.
+        if !accessibilityTrusted || !eventTapRunning {
+            return .setup
         }
-        if inputSourceBlocked {
-            return "—"
+        // Trusted + tap up, but must not look like active VI when blocked or EN.
+        if inputSourceBlocked || !typingEnabled {
+            return .inactive
         }
-        return typingEnabled ? "VI" : "EN"
+        return .active
+    }
+
+    /// Hover / accessibility description (Vietnamese).
+    var menuBarToolTip: String {
+        switch menuBarIconState {
+        case .setup:
+            if !accessibilityTrusted {
+                return "Dấu — cần setup (chưa cấp Accessibility)"
+            }
+            return "Dấu — cần setup (event tap chưa chạy)"
+        case .active:
+            return "Dấu — VI"
+        case .inactive:
+            if inputSourceBlocked {
+                return "Dấu — tạm tắt (input source)"
+            }
+            return "Dấu — EN"
+        }
+    }
+
+    /// VoiceOver / accessibility label for the status item button.
+    var menuBarAccessibilityLabel: String {
+        switch menuBarIconState {
+        case .setup:
+            return "Dấu — cần setup"
+        case .active:
+            return "Dấu — VI"
+        case .inactive:
+            if inputSourceBlocked {
+                return "Dấu — tạm tắt"
+            }
+            return "Dấu — EN"
+        }
     }
 }

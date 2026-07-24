@@ -91,7 +91,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startAXPolling()
         attemptStartTap(prompt: false)
 
-        if !state.accessibilityTrusted {
+        // First-run / recovery: show setup until AX trusted AND keyboard listener runs.
+        // Trusted-but-tap-failed must not be treated as success (ONBOARD-03).
+        if !state.accessibilityTrusted || !state.eventTapRunning {
             onboarding.show()
         }
 
@@ -205,17 +207,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if trusted != state.accessibilityTrusted {
             state.accessibilityTrusted = trusted
             if trusted {
+                // Start listener; onboarding only completes when tap is running.
                 attemptStartTap(prompt: false)
-                onboarding.close()
             } else {
                 eventTap.stop()
                 state.eventTapRunning = false
                 typingSession.resetCompose()
                 syncUI()
+                onboarding.refreshStatus()
             }
         } else if trusted, !state.eventTapRunning {
-            // Permission ok but tap died — try recover without prompt spam.
+            // Permission ok but listener not running — recover without prompt spam.
             attemptStartTap(prompt: false)
+        } else if trusted, state.eventTapRunning {
+            // Keep ready phase in sync while window still open (auto-close is onboarding-owned).
+            onboarding.refreshStatus()
         }
     }
 

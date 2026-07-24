@@ -1,4 +1,4 @@
-// Dấu macOS — status item menu: VI/EN, Telex/VNI, AX status, quit (WP-06).
+// Dấu macOS — status item menu: icon states, VI/EN, Telex/VNI, AX, About, quit (MENU-02).
 
 import AppKit
 import Foundation
@@ -29,18 +29,15 @@ final class MenuBarController: NSObject {
 
     func start() {
         guard statusItem == nil else {
-            rebuildMenu()
+            refresh()
             return
         }
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem = item
-        if let button = item.button {
-            button.title = state.menuBarTitle
-            button.toolTip = "Dấu — bộ gõ tiếng Việt"
-        }
+        applyButtonAppearance()
         rebuildMenu()
 
-        // Rebuild title/menu when AppState publishes changes (main thread).
+        // Rebuild icon/menu when AppState publishes changes (main thread).
         stateObserver = NotificationCenter.default.addObserver(
             forName: nil,
             object: state,
@@ -48,7 +45,7 @@ final class MenuBarController: NSObject {
         ) { [weak self] _ in
             self?.refresh()
         }
-        // Combine-less fallback: poll lightly via a timer is overkill; AppDelegate calls refresh().
+        // Combine-less fallback: AppDelegate calls refresh() after mutations.
     }
 
     func stop() {
@@ -62,11 +59,38 @@ final class MenuBarController: NSObject {
         }
     }
 
-    /// Update title + menu contents from current state.
+    /// Update icon + accessibility + menu contents from current state.
     func refresh() {
-        statusItem?.button?.title = state.menuBarTitle
+        applyButtonAppearance()
         rebuildMenu()
     }
+
+    // MARK: - Status button
+
+    private func applyButtonAppearance() {
+        guard let button = statusItem?.button else { return }
+
+        button.title = ""
+        button.imagePosition = .imageOnly
+        button.image = Self.templateImage(named: state.menuBarIconState.assetName)
+        button.toolTip = state.menuBarToolTip
+        button.setAccessibilityLabel(state.menuBarAccessibilityLabel)
+        button.setAccessibilityTitle(state.menuBarAccessibilityLabel)
+    }
+
+    /// Load catalog image as template so menu bar light/dark tints correctly.
+    static func templateImage(named name: String) -> NSImage? {
+        guard let image = NSImage(named: name) else {
+            return nil
+        }
+        image.isTemplate = true
+        // Keep status-item scale ~16–18 pt.
+        let side: CGFloat = 18
+        image.size = NSSize(width: side, height: side)
+        return image
+    }
+
+    // MARK: - Menu
 
     private func rebuildMenu() {
         let menu = NSMenu()
@@ -168,6 +192,14 @@ final class MenuBarController: NSObject {
 
         menu.addItem(.separator())
 
+        let about = NSMenuItem(
+            title: "Giới thiệu Dấu",
+            action: #selector(handleAbout),
+            keyEquivalent: ""
+        )
+        about.target = self
+        menu.addItem(about)
+
         let quit = NSMenuItem(
             title: "Thoát Dấu",
             action: #selector(handleQuit),
@@ -187,5 +219,28 @@ final class MenuBarController: NSObject {
     @objc private func handleAccessibility() { onOpenAccessibilitySettings?() }
     @objc private func handleRestartTap() { onRestartTap?() }
     @objc private func handleOnboarding() { onShowOnboarding?() }
+
+    @objc private func handleAbout() {
+        var options: [NSApplication.AboutPanelOptionKey: Any] = [:]
+        options[.applicationName] = "Dấu"
+        if let marketing = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+            options[.version] = marketing
+        }
+        if let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
+            options[.applicationVersion] = build
+        }
+        // Prefer app icon from catalog / bundle; fall back to AppLogo.
+        if let icon = NSApp.applicationIconImage {
+            options[.applicationIcon] = icon
+        } else if let logo = NSImage(named: "AppLogo") {
+            options[.applicationIcon] = logo
+        }
+        let copyright = Bundle.main.infoDictionary?["NSHumanReadableCopyright"] as? String
+            ?? "Copyright © 2026 Dấu Contributors. MIT License."
+        options[.credits] = NSAttributedString(string: copyright)
+        NSApp.orderFrontStandardAboutPanel(options: options)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     @objc private func handleQuit() { onQuit?() }
 }
