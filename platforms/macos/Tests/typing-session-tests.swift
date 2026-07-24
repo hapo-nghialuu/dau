@@ -56,10 +56,19 @@ final class TypingSessionTests: XCTestCase {
         )
     }
 
-    private func deleteKey(isRepeat: Bool = false, keyCode: UInt16 = KeyClassifier.KeyCode.delete) -> ClassifiedKey {
+    private func backspaceKey(isRepeat: Bool = false) -> ClassifiedKey {
         ClassifiedKey(
-            kind: .delete,
-            keyCode: keyCode,
+            kind: .backspace,
+            keyCode: KeyClassifier.KeyCode.delete,
+            isRepeat: isRepeat,
+            shiftHeld: false
+        )
+    }
+
+    private func forwardDeleteKey(isRepeat: Bool = false) -> ClassifiedKey {
+        ClassifiedKey(
+            kind: .forwardDelete,
+            keyCode: KeyClassifier.KeyCode.forwardDelete,
             isRepeat: isRepeat,
             shiftHeld: false
         )
@@ -158,11 +167,11 @@ final class TypingSessionTests: XCTestCase {
 
     // MARK: - Delete during compose
 
-    func testDeleteWhileComposingConsumesAndWipesViaInject() {
+    func testBackspaceWhileComposingConsumesOneScalarViaInject() {
         _ = handle(printable("a"))
         sink.reset()
 
-        let d = handle(deleteKey())
+        let d = handle(backspaceKey())
         XCTAssertTrue(d.consumeOriginal)
         XCTAssertTrue(d.injectScheduled)
         XCTAssertEqual(d.result.backspace, 1)
@@ -171,32 +180,31 @@ final class TypingSessionTests: XCTestCase {
         XCTAssertEqual(session.provisionalLength, 0)
     }
 
-    func testDeleteWithoutComposePasses() {
-        let d = handle(deleteKey())
+    func testBackspaceWithoutComposePasses() {
+        let d = handle(backspaceKey())
         XCTAssertFalse(d.consumeOriginal)
         XCTAssertFalse(d.injectScheduled)
         XCTAssertTrue(sink.commands.isEmpty)
     }
 
-    // MARK: - DELETE-05: wipe → retype → commit (session + inject)
+    // MARK: - TG-04: per-char Backspace → retype suffix → commit (session + inject)
 
-    /// P0 contract: Backspace while composing wipes **whole provisional**, then retype commits once.
-    func testTelexDeleteRetypeCommitOnceViaSession() {
+    /// Telex: `tiếng → Backspace → tiến → g → tiếng` then Space commits once.
+    func testTelexBackspaceRetypeSuffixCommitViaSession() {
         _ = typeASCII("tieengs")
         XCTAssertEqual(session.provisionalLength, "tiếng".unicodeScalars.count)
         sink.reset()
 
-        let wipe = handle(deleteKey())
-        XCTAssertTrue(wipe.consumeOriginal)
-        XCTAssertTrue(wipe.injectScheduled)
-        XCTAssertEqual(wipe.result.backspace, "tiếng".unicodeScalars.count)
-        XCTAssertEqual(wipe.result.text, "")
-        // Whole-provisional wipe: N backspaces, no replacement text.
-        XCTAssertEqual(sink.commands, Array(repeating: .backspace, count: "tiếng".unicodeScalars.count))
-        XCTAssertEqual(session.provisionalLength, 0)
+        let bs = handle(backspaceKey())
+        XCTAssertTrue(bs.consumeOriginal)
+        XCTAssertTrue(bs.injectScheduled)
+        XCTAssertEqual(bs.result.backspace, 1, "one display scalar only")
+        XCTAssertEqual(bs.result.text, "")
+        XCTAssertEqual(sink.commands, [.backspace])
+        XCTAssertEqual(session.provisionalLength, "tiến".unicodeScalars.count)
 
         sink.reset()
-        _ = typeASCII("tieengs")
+        _ = typeASCII("g")
         XCTAssertEqual(session.provisionalLength, "tiếng".unicodeScalars.count)
 
         sink.reset()
@@ -210,20 +218,20 @@ final class TypingSessionTests: XCTestCase {
         XCTAssertEqual(session.provisionalLength, 0)
     }
 
-    func testVniDeleteRetypeCommitOnceViaSession() {
+    func testVniBackspaceRetypeSuffixCommitViaSession() {
         session.setMethod(DauMethod_Vni)
         _ = typeASCII("tie6ng1")
         XCTAssertEqual(session.provisionalLength, "tiếng".unicodeScalars.count)
         sink.reset()
 
-        let wipe = handle(deleteKey())
-        XCTAssertTrue(wipe.consumeOriginal)
-        XCTAssertEqual(wipe.result.backspace, "tiếng".unicodeScalars.count)
-        XCTAssertEqual(sink.commands, Array(repeating: .backspace, count: "tiếng".unicodeScalars.count))
-        XCTAssertEqual(session.provisionalLength, 0)
+        let bs = handle(backspaceKey())
+        XCTAssertTrue(bs.consumeOriginal)
+        XCTAssertEqual(bs.result.backspace, 1)
+        XCTAssertEqual(sink.commands, [.backspace])
+        XCTAssertEqual(session.provisionalLength, "tiến".unicodeScalars.count)
 
         sink.reset()
-        _ = typeASCII("tie6ng1")
+        _ = typeASCII("g")
         sink.reset()
         let commit = handle(breakSpace())
         XCTAssertFalse(commit.consumeOriginal)
@@ -233,13 +241,33 @@ final class TypingSessionTests: XCTestCase {
         XCTAssertTrue(sink.commands.isEmpty)
     }
 
-    func testDeleteAfterCommitPassesWithoutInject() {
+    func testEnglishDeleteBackspaceThenEViaSession() {
+        _ = typeASCII("delete")
+        XCTAssertEqual(session.provisionalLength, 6)
+        sink.reset()
+
+        let bs = handle(backspaceKey())
+        XCTAssertTrue(bs.consumeOriginal)
+        XCTAssertEqual(bs.result.backspace, 1)
+        XCTAssertEqual(sink.commands, [.backspace])
+        XCTAssertEqual(session.provisionalLength, 5)
+
+        sink.reset()
+        let e = handle(printable("e"))
+        // Plain append: original key passes, no inject rewrite.
+        XCTAssertFalse(e.consumeOriginal)
+        XCTAssertFalse(e.injectScheduled)
+        XCTAssertEqual(session.provisionalLength, 6)
+        XCTAssertTrue(sink.commands.isEmpty)
+    }
+
+    func testBackspaceAfterCommitPassesWithoutInject() {
         _ = typeASCII("tieengs")
         _ = handle(breakSpace())
         XCTAssertEqual(session.provisionalLength, 0)
         sink.reset()
 
-        let d = handle(deleteKey())
+        let d = handle(backspaceKey())
         XCTAssertFalse(d.consumeOriginal)
         XCTAssertFalse(d.injectScheduled)
         XCTAssertEqual(d.result, .passthrough)
@@ -247,25 +275,27 @@ final class TypingSessionTests: XCTestCase {
         XCTAssertEqual(session.provisionalLength, 0)
     }
 
-    func testForwardDeleteWhileComposingWipesViaInject() {
+    /// Forward Delete: pass-through + reset; no inject wipe of provisional.
+    func testForwardDeleteWhileComposingResetsWithoutInject() {
         _ = typeASCII("aa")
         sink.reset()
-        let d = handle(deleteKey(keyCode: KeyClassifier.KeyCode.forwardDelete))
-        XCTAssertTrue(d.consumeOriginal)
-        XCTAssertTrue(d.injectScheduled)
-        XCTAssertEqual(d.result.backspace, 1)
-        XCTAssertEqual(sink.commands, [.backspace])
+        let d = handle(forwardDeleteKey())
+        XCTAssertFalse(d.consumeOriginal)
+        XCTAssertFalse(d.injectScheduled)
+        XCTAssertEqual(d.result, .passthrough)
+        XCTAssertEqual(d.result.backspace, 0)
+        XCTAssertTrue(sink.commands.isEmpty)
         XCTAssertEqual(session.provisionalLength, 0)
     }
 
-    func testDeleteRepeatAfterWipePassesNoSecondInject() {
+    func testBackspaceRepeatAfterEmptyPassesNoSecondInject() {
         _ = typeASCII("a")
         sink.reset()
-        _ = handle(deleteKey(isRepeat: false))
+        _ = handle(backspaceKey(isRepeat: false))
         XCTAssertEqual(session.provisionalLength, 0)
         sink.reset()
 
-        let repeated = handle(deleteKey(isRepeat: true))
+        let repeated = handle(backspaceKey(isRepeat: true))
         XCTAssertFalse(repeated.consumeOriginal)
         XCTAssertFalse(repeated.injectScheduled)
         XCTAssertEqual(repeated.result, .passthrough)

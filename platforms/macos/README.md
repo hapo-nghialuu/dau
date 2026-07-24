@@ -168,25 +168,33 @@ Script **không** ghi TCC database.
 
 Tắt tạm OpenKey / Gõ Nhanh / IME khác khi so sánh.
 
-### 4b. Manual matrix — Delete/retype + paste/media (DELETE-05)
+### 4b. Manual matrix — Backspace / Forward Delete + paste/media (TG-04)
 
-Unit tests **không** thay smoke tay. P0 contract hiện tại: **Backspace/Delete khi đang compose = wipe toàn bộ provisional** (không phải xoá từng ký tự). Ghi app / version / method / raw keys / expected / actual / PASS|FAIL.
+Unit tests **không** thay smoke tay. Contract hiện tại:
+
+- **Backspace (key 51)** khi đang compose: xóa **đúng một** Unicode scalar hiển thị qua core (`dau_backspace`); gõ tiếp tiếp tục compose trên buffer đã edit.
+- **Buffer rỗng / idle**: Backspace pass-through (app nhận key gốc).
+- **Forward Delete (key 117)**: **không** xóa cả provisional; pass-through + reset compose (policy tường minh).
+- **Cmd/Ctrl/Option+Delete** và navigation: boundary app-level (reset compose, forward).
+
+Ghi app / version / method / raw keys / expected / actual / PASS|FAIL.
 
 Chạy tối thiểu trên **TextEdit**, **Terminal.app**, một **browser contenteditable** (Safari/Chromium), và **chat** nơi đã smoke Dấu.
 
 | # | Bối cảnh | Thao tác | Kỳ vọng |
 |---|----------|----------|---------|
-| D1 | Telex compose | `tieengs` → Backspace → gõ lại `tieengs` → Space | Wipe hết provisional; màn hình còn `tiếng ` **một lần** |
-| D2 | VNI compose | `tie6ng1` → Backspace → gõ lại → Space | Tương tự D1 → `tiếng ` một lần |
+| D1 | Telex compose | `tieengs` → Backspace → `g` → Space | `tiếng ` **một lần** (BS chỉ bỏ `g` → `tiến`, gõ lại `g` khôi phục) |
+| D2 | VNI compose | `tie6ng1` → Backspace → `g` → Space | Tương tự D1 → `tiếng ` một lần |
+| D2b | Telex | `dduaw` → Backspace → `a` | `đưa` → `đư` → `đưa` |
+| D2c | English | `delete` → Backspace → `e` | `delete` → `delet` → `delete` |
 | D3 | Sau commit | Gõ xong từ + Space → Backspace | App xoá **một** ký tự (Space hoặc chữ cuối theo caret); **không** inject word cũ |
 | D4 | Idle (không compose) | Backspace / Forward Delete | Pass-through bình thường của app |
-| D5 | Đổi method | Wipe → chuyển Telex↔VNI → gõ từ mới | Word mới đúng method; không dính provisional cũ |
+| D4b | Đang compose | Forward Delete | Pass-through + reset compose; **không** wipe cả từ bằng inject |
+| D5 | Đổi method | Backspace hết buffer → chuyển Telex↔VNI → gõ từ mới | Word mới đúng method; không dính provisional cũ |
 | P1 | Idle | Cmd+V paste **plain text** | Dấu không nuốt shortcut; text dán đúng; gõ `tieengs` sau đó sạch |
 | P2 | Đang compose | Gõ dở → Cmd+V paste **plain text** | Shortcut pass-through; compose reset; sau paste gõ từ mới **không** dính/lặp |
 | P3 | Idle | Cmd+V paste **image** hoặc **GIF** | Không nuốt Cmd+V; không inject ký tự lạ; word kế tiếp sạch |
 | P4 | Đang compose | Gõ dở → paste **image/GIF** | Giống P3 + state compose không “dính” vào media |
-
-Nếu whole-wipe (D1/D2) không chấp nhận được khi smoke, ghi FAIL + expected UX → mở package P1 (per-character Backspace), **không** đổi semantics trong P0.
 
 ### 5. Rebuild → re-test
 

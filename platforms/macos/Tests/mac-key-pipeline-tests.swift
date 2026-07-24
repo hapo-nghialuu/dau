@@ -248,36 +248,32 @@ final class MacKeyPipelineTests: XCTestCase {
         XCTAssertFalse(r.consumeOriginal)
     }
 
-    // MARK: - Delete during compose (P0)
+    // MARK: - Backspace during compose (TG-04: per-character)
 
-    func testDeleteWhileComposingWipesAndConsumes() {
+    func testBackspaceOneDisplayScalarWhileComposing() {
         _ = typeASCII("tieengs")
-        let len = pipeline.provisionalLength
-        XCTAssertGreaterThan(len, 0)
-        let r = pipeline.handleDelete()
-        XCTAssertEqual(r.backspace, len)
+        XCTAssertEqual(pipeline.provisionalText, "tiếng")
+        let before = pipeline.provisionalLength
+        XCTAssertEqual(before, "tiếng".unicodeScalars.count)
+
+        let r = pipeline.handleBackspace()
+        XCTAssertEqual(r.backspace, 1, "exactly one display scalar")
         XCTAssertEqual(r.text, "")
         XCTAssertTrue(r.consumeOriginal)
-        XCTAssertEqual(pipeline.provisionalLength, 0)
-        XCTAssertEqual(pipeline.provisionalText, "")
-        // Next printable starts fresh (no leftover core word); plain append passes original.
-        let next = pipeline.handlePrintable(sc("a"))
-        XCTAssertEqual(next.backspace, 0)
-        XCTAssertEqual(next.text, "")
-        XCTAssertFalse(next.consumeOriginal)
-        XCTAssertEqual(pipeline.provisionalText, "a")
+        XCTAssertEqual(pipeline.provisionalText, "tiến")
+        XCTAssertEqual(pipeline.provisionalLength, before - 1)
     }
 
-    func testDeleteWithoutComposePassthrough() {
-        let r = pipeline.handleDelete()
+    func testBackspaceWithoutComposePassthrough() {
+        let r = pipeline.handleBackspace()
         XCTAssertEqual(r, .passthrough)
         XCTAssertFalse(r.consumeOriginal)
     }
 
-    func testClassifiedDeleteUsesHandleDelete() {
+    func testClassifiedBackspaceUsesCoreEdit() {
         _ = typeASCII("aa")
         let key = ClassifiedKey(
-            kind: .delete,
+            kind: .backspace,
             keyCode: KeyClassifier.KeyCode.delete,
             isRepeat: false,
             shiftHeld: false
@@ -286,69 +282,107 @@ final class MacKeyPipelineTests: XCTestCase {
         XCTAssertTrue(r.consumeOriginal)
         XCTAssertEqual(r.backspace, 1) // "â" is one scalar after aa in Telex
         XCTAssertEqual(pipeline.provisionalLength, 0)
+        XCTAssertEqual(pipeline.provisionalText, "")
     }
 
-    // MARK: - DELETE-05: full-word wipe → retype → commit (P0 contract = whole provisional)
+    // MARK: - TG-04: per-char Backspace sequences
 
-    /// P0 characterizes delete-during-compose as **whole-provisional wipe**, not per-character.
-    func testTelexFullWordDeleteRetypeCommitOnce() {
+    /// `tieengs → tiếng → Backspace → tiến → g → tiếng` (Telex).
+    func testTelexBackspaceThenRetypeSuffix() {
         _ = typeASCII("tieengs")
         XCTAssertEqual(pipeline.provisionalText, "tiếng")
-        let wipeLen = pipeline.provisionalLength
-        XCTAssertEqual(wipeLen, "tiếng".unicodeScalars.count)
 
-        let wipe = pipeline.handleDelete()
-        XCTAssertEqual(wipe.backspace, wipeLen, "wipe every provisional scalar")
-        XCTAssertEqual(wipe.text, "")
-        XCTAssertTrue(wipe.consumeOriginal)
-        XCTAssertEqual(pipeline.provisionalLength, 0)
-        XCTAssertEqual(pipeline.provisionalText, "")
+        let bs = pipeline.handleBackspace()
+        XCTAssertEqual(bs.backspace, 1)
+        XCTAssertEqual(bs.text, "")
+        XCTAssertTrue(bs.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalText, "tiến")
 
-        // Retype full word after wipe — no leftover core / provisional.
-        _ = typeASCII("tieengs")
+        _ = typeASCII("g")
         XCTAssertEqual(pipeline.provisionalText, "tiếng")
-        XCTAssertEqual(pipeline.provisionalLength, wipeLen)
 
         let commit = pipeline.handleBreak(sc(" "))
         XCTAssertEqual(commit.backspace, 0, "matching provisional → no retype inject")
         XCTAssertEqual(commit.text, "")
         XCTAssertFalse(commit.consumeOriginal, "Space is forwarded once")
         XCTAssertEqual(pipeline.provisionalLength, 0)
-        XCTAssertEqual(pipeline.provisionalText, "")
     }
 
-    func testVniFullWordDeleteRetypeCommitOnce() {
+    /// VNI: `tie6ng1 → tiếng → Backspace → tiến → g → tiếng`.
+    func testVniBackspaceThenRetypeSuffix() {
         bridge.setMethod(DauMethod_Vni)
         _ = typeASCII("tie6ng1")
         XCTAssertEqual(pipeline.provisionalText, "tiếng")
-        let wipeLen = pipeline.provisionalLength
-        XCTAssertEqual(wipeLen, "tiếng".unicodeScalars.count)
 
-        let wipe = pipeline.handleDelete()
-        XCTAssertEqual(wipe.backspace, wipeLen)
-        XCTAssertEqual(wipe.text, "")
-        XCTAssertTrue(wipe.consumeOriginal)
-        XCTAssertEqual(pipeline.provisionalLength, 0)
-        XCTAssertEqual(pipeline.provisionalText, "")
+        let bs = pipeline.handleBackspace()
+        XCTAssertEqual(bs.backspace, 1)
+        XCTAssertEqual(pipeline.provisionalText, "tiến")
 
-        _ = typeASCII("tie6ng1")
+        _ = typeASCII("g")
         XCTAssertEqual(pipeline.provisionalText, "tiếng")
 
         let commit = pipeline.handleBreak(sc(" "))
         XCTAssertEqual(commit.backspace, 0)
-        XCTAssertEqual(commit.text, "")
         XCTAssertFalse(commit.consumeOriginal)
         XCTAssertEqual(pipeline.provisionalLength, 0)
     }
 
-    func testDeleteAfterCommitIsPassthroughAndCoreClean() {
+    /// `dduaw → đưa → Backspace → đư → a → đưa`.
+    func testTelexDduawBackspaceThenA() {
+        _ = typeASCII("dduaw")
+        XCTAssertEqual(pipeline.provisionalText, "đưa")
+
+        let bs = pipeline.handleBackspace()
+        XCTAssertEqual(bs.backspace, 1)
+        XCTAssertEqual(bs.text, "")
+        XCTAssertTrue(bs.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalText, "đư")
+
+        _ = typeASCII("a")
+        XCTAssertEqual(pipeline.provisionalText, "đưa")
+    }
+
+    /// English `delete → Backspace → delet → e → delete`.
+    func testEnglishDeleteBackspaceThenE() {
+        _ = typeASCII("delete")
+        XCTAssertEqual(pipeline.provisionalText, "delete")
+
+        let bs = pipeline.handleBackspace()
+        XCTAssertEqual(bs.backspace, 1)
+        XCTAssertEqual(pipeline.provisionalText, "delet")
+
+        let e = pipeline.handlePrintable(sc("e"))
+        XCTAssertEqual(e.backspace, 0)
+        XCTAssertFalse(e.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalText, "delete")
+    }
+
+    /// Repeated Backspace removes one scalar each time down to empty; next is pass-through.
+    func testRepeatedBackspaceToEmptyThenPassthrough() {
+        _ = typeASCII("aa")
+        XCTAssertEqual(pipeline.provisionalText, "â")
+        XCTAssertEqual(pipeline.provisionalLength, 1)
+
+        let first = pipeline.handleBackspace()
+        XCTAssertEqual(first.backspace, 1)
+        XCTAssertTrue(first.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+        XCTAssertEqual(pipeline.provisionalText, "")
+
+        let second = pipeline.handleBackspace()
+        XCTAssertEqual(second, .passthrough)
+        XCTAssertFalse(second.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalLength, 0)
+    }
+
+    func testBackspaceAfterCommitIsPassthroughAndCoreClean() {
         _ = typeASCII("tieengs")
         let commit = pipeline.handleBreak(sc(" "))
         XCTAssertEqual(pipeline.provisionalLength, 0)
         XCTAssertFalse(commit.consumeOriginal)
 
-        // After commit, Delete is not a compose wipe — app receives the real key.
-        let del = pipeline.handleDelete()
+        // After commit, Backspace is not a compose edit — app receives the real key.
+        let del = pipeline.handleBackspace()
         XCTAssertEqual(del, .passthrough)
         XCTAssertFalse(del.consumeOriginal)
         XCTAssertEqual(del.backspace, 0)
@@ -362,28 +396,37 @@ final class MacKeyPipelineTests: XCTestCase {
         XCTAssertEqual(pipeline.provisionalText, "a")
     }
 
-    func testForwardDeleteWhileComposingWipesSameAsBackspace() {
+    /// Forward Delete: pass-through + reset compose (never whole-wipe via inject).
+    func testForwardDeleteWhileComposingResetsAndPassthrough() {
         _ = typeASCII("tieengs")
-        let len = pipeline.provisionalLength
+        XCTAssertEqual(pipeline.provisionalText, "tiếng")
         let key = ClassifiedKey(
-            kind: .delete,
+            kind: .forwardDelete,
             keyCode: KeyClassifier.KeyCode.forwardDelete,
             isRepeat: false,
             shiftHeld: false
         )
         let r = pipeline.handleClassified(key)
-        XCTAssertTrue(r.consumeOriginal)
-        XCTAssertEqual(r.backspace, len)
+        XCTAssertEqual(r, .passthrough)
+        XCTAssertFalse(r.consumeOriginal)
+        XCTAssertEqual(r.backspace, 0)
         XCTAssertEqual(r.text, "")
         XCTAssertEqual(pipeline.provisionalLength, 0)
+        XCTAssertEqual(pipeline.provisionalText, "")
+
+        // Next printable starts a fresh word.
+        let next = pipeline.handlePrintable(sc("a"))
+        XCTAssertEqual(next.backspace, 0)
+        XCTAssertFalse(next.consumeOriginal)
+        XCTAssertEqual(pipeline.provisionalText, "a")
     }
 
-    func testDeleteRepeatAfterWipeIsPassthroughNoDoubleWipe() {
+    func testBackspaceRepeatAfterEmptyIsPassthrough() {
         _ = typeASCII("aa")
         XCTAssertEqual(pipeline.provisionalText, "â")
         let first = pipeline.handleClassified(
             ClassifiedKey(
-                kind: .delete,
+                kind: .backspace,
                 keyCode: KeyClassifier.KeyCode.delete,
                 isRepeat: false,
                 shiftHeld: false
@@ -393,10 +436,10 @@ final class MacKeyPipelineTests: XCTestCase {
         XCTAssertEqual(first.backspace, 1)
         XCTAssertEqual(pipeline.provisionalLength, 0)
 
-        // Autorepeat while holding Delete after wipe: no second provisional wipe inject.
+        // Autorepeat after empty: pass-through, no inject.
         let repeated = pipeline.handleClassified(
             ClassifiedKey(
-                kind: .delete,
+                kind: .backspace,
                 keyCode: KeyClassifier.KeyCode.delete,
                 isRepeat: true,
                 shiftHeld: false
@@ -450,9 +493,9 @@ final class MacKeyPipelineTests: XCTestCase {
         XCTAssertEqual(pipeline.provisionalLength, 0)
     }
 
-    func testDeleteThenMethodSwitchStartsFreshWord() {
-        _ = typeASCII("tieengs")
-        _ = pipeline.handleDelete()
+    func testBackspaceToEmptyThenMethodSwitchStartsFreshWord() {
+        _ = typeASCII("aa")
+        _ = pipeline.handleBackspace()
         XCTAssertEqual(pipeline.provisionalLength, 0)
 
         bridge.setMethod(DauMethod_Vni)

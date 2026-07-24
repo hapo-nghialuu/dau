@@ -175,21 +175,23 @@ final class KeyClassifierTests: XCTestCase {
         }
     }
 
-    func testDeleteIsFirstClass() {
+    func testBackspaceIsFirstClass() {
         let key = KeyClassifier.classify(
             KeyClassifierInput(keyCode: KeyClassifier.KeyCode.delete)
         )
-        XCTAssertEqual(key.kind, .delete)
-        XCTAssertEqual(key.pipelineKind, .delete)
+        XCTAssertEqual(key.kind, .backspace)
+        XCTAssertEqual(key.pipelineKind, .backspace)
         XCTAssertNil(key.scalarValue)
     }
 
-    func testForwardDeleteIsFirstClass() {
+    func testForwardDeleteIsSeparateFromBackspace() {
         let key = KeyClassifier.classify(
             KeyClassifierInput(keyCode: KeyClassifier.KeyCode.forwardDelete)
         )
-        XCTAssertEqual(key.kind, .delete)
-        XCTAssertEqual(key.pipelineKind, .delete)
+        XCTAssertEqual(key.kind, .forwardDelete)
+        XCTAssertEqual(key.pipelineKind, .forwardDelete)
+        XCTAssertNotEqual(key.kind, .backspace)
+        XCTAssertNil(key.scalarValue)
     }
 
     func testCommandDeleteRemainsOther() {
@@ -224,15 +226,15 @@ final class KeyClassifierTests: XCTestCase {
         XCTAssertEqual(idle.pipelineKind, .boundary)
     }
 
-    func testDeleteRepeatFlagPreserved() {
+    func testBackspaceRepeatFlagPreserved() {
         let key = KeyClassifier.classify(
             KeyClassifierInput(
                 keyCode: KeyClassifier.KeyCode.delete,
                 isRepeat: true
             )
         )
-        XCTAssertEqual(key.kind, .delete)
-        XCTAssertEqual(key.pipelineKind, .delete)
+        XCTAssertEqual(key.kind, .backspace)
+        XCTAssertEqual(key.pipelineKind, .backspace)
         XCTAssertTrue(key.isRepeat)
     }
 
@@ -243,19 +245,20 @@ final class KeyClassifierTests: XCTestCase {
                 isRepeat: true
             )
         )
-        XCTAssertEqual(key.kind, .delete)
+        XCTAssertEqual(key.kind, .forwardDelete)
+        XCTAssertEqual(key.pipelineKind, .forwardDelete)
         XCTAssertTrue(key.isRepeat)
     }
 
-    func testCommandDeleteNotFirstClassDelete() {
-        // Distinct from bare Delete: app word-delete shortcut, compose must reset via boundary.
+    func testCommandDeleteNotFirstClassBackspace() {
+        // Distinct from bare Backspace: app word-delete shortcut, compose must reset via boundary.
         let bare = KeyClassifier.classify(
             KeyClassifierInput(keyCode: KeyClassifier.KeyCode.delete)
         )
         let withCmd = KeyClassifier.classify(
             KeyClassifierInput(keyCode: KeyClassifier.KeyCode.delete, command: true)
         )
-        XCTAssertEqual(bare.kind, .delete)
+        XCTAssertEqual(bare.kind, .backspace)
         XCTAssertEqual(withCmd.kind, .other)
         XCTAssertEqual(withCmd.pipelineKind, .boundary)
         XCTAssertNotEqual(bare.pipelineKind, withCmd.pipelineKind)

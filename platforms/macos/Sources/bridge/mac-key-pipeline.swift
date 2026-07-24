@@ -1,5 +1,5 @@
 // Dấu macOS — compose / provisional state machine over DauCoreBridge + DauResultMapper.
-// WP-02 + P0 review: delete-during-compose wipe, None-while-composing wipe.
+// WP-02 + TG-04: per-character Backspace via core; Forward Delete pass-through + reset.
 
 import Foundation
 
@@ -8,8 +8,10 @@ enum PipelineKeyKind: Equatable {
     case printable
     case breakKey
     case escape
-    /// Delete/Backspace while composing: wipe provisional and consume OS key.
-    case delete
+    /// Backspace while composing: core `dau_backspace` (one display scalar).
+    case backspace
+    /// Forward Delete: pass-through OS key and abandon compose (explicit policy).
+    case forwardDelete
     case boundary  // navigation / modifier / other — reset compose, forward
 }
 
@@ -61,21 +63,53 @@ final class MacKeyPipeline {
         apply(bridge.escape())
     }
 
-    /// Delete / Backspace during compose: wipe all provisional scalars and consume OS delete.
-    /// When not composing, passthrough so the app receives the real Delete key.
+    /// Backspace during compose: delete **one** display Unicode scalar via core.
+    /// Empty buffer → pass-through so the app receives the real Backspace key.
+    /// After the last scalar: clear provisional, `backspace=1`, `consumeOriginal=true`.
     @discardableResult
-    func handleDelete() -> BridgeResult {
+    func handleBackspace() -> BridgeResult {
         if provisionalLength <= 0 {
             return .passthrough
         }
-        let wipe = provisionalLength
-        resetCompose()
-        return BridgeResult(
-            backspace: wipe,
-            text: "",
-            consumeOriginal: true,
-            capitalizeNext: false
-        )
+        let core = bridge.backspace()
+        lastCapitalizeNext = core.capitalizeNext
+
+        switch core.action {
+        case DauAction_UpdatePreedit:
+            // Suffix delta (usually backspace=1, text="") via TG-02 mapper.
+            return DauResultMapper.map(
+                core,
+                provisionalText: &provisionalText,
+                provisionalLength: &provisionalLength
+            )
+        case DauAction_None:
+            // Core empty / disabled while we still tracked provisional — desync.
+            // Pass physical Backspace; drop local provisional without wipe inject.
+            provisionalText = ""
+            provisionalLength = 0
+            return .passthrough
+        default:
+            return DauResultMapper.map(
+                core,
+                provisionalText: &provisionalText,
+                provisionalLength: &provisionalLength
+            )
+        }
+    }
+
+    /// Alias used by older call sites / tests (TG-04: per-character, not whole wipe).
+    @discardableResult
+    func handleDelete() -> BridgeResult {
+        handleBackspace()
+    }
+
+    /// Forward Delete: do **not** edit compose via core. Reset state and pass the OS key.
+    @discardableResult
+    func handleForwardDelete() -> BridgeResult {
+        if provisionalLength > 0 {
+            resetCompose()
+        }
+        return .passthrough
     }
 
     /// Unified entry used by EventTap / TypingSession wiring.
@@ -88,15 +122,17 @@ final class MacKeyPipeline {
             return handleBreak(ch)
         case .escape:
             return handleEscape()
-        case .delete:
-            return handleDelete()
+        case .backspace:
+            return handleBackspace()
+        case .forwardDelete:
+            return handleForwardDelete()
         case .boundary:
             resetCompose()
             return .passthrough
         }
     }
 
-    /// Handle a classifier result (including `.delete`).
+    /// Handle a classifier result (including `.backspace` / `.forwardDelete`).
     @discardableResult
     func handleClassified(_ key: ClassifiedKey) -> BridgeResult {
         switch key.kind {
@@ -107,8 +143,10 @@ final class MacKeyPipeline {
             return handleBreak(scalar)
         case .escape:
             return handleEscape()
-        case .delete:
-            return handleDelete()
+        case .backspace:
+            return handleBackspace()
+        case .forwardDelete:
+            return handleForwardDelete()
         case .modifier, .other:
             resetCompose()
             return .passthrough

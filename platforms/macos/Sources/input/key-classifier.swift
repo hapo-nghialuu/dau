@@ -14,8 +14,10 @@ enum ClassifiedKeyKind: Equatable, Sendable {
     case breakKey(Unicode.Scalar)
     /// Escape / restore path.
     case escape
-    /// Delete / Backspace / ForwardDelete (key codes 51 / 117).
-    case delete
+    /// Backspace (key code 51): per-character compose edit via core.
+    case backspace
+    /// Forward Delete (key code 117): pass-through + reset compose (not per-char edit).
+    case forwardDelete
     /// Pure modifier press or `flagsChanged` (forward; reset compose).
     case modifier
     /// Navigation, shortcuts with Cmd/Ctrl/Opt, unknown — forward; reset compose.
@@ -36,17 +38,18 @@ struct ClassifiedKey: Equatable, Sendable {
         case .printable: return .printable
         case .breakKey: return .breakKey
         case .escape: return .escape
-        case .delete: return .delete
+        case .backspace: return .backspace
+        case .forwardDelete: return .forwardDelete
         case .modifier, .other: return .boundary
         }
     }
 
-    /// UTF-32 code unit for printable/break; nil for escape/delete/modifier/other.
+    /// UTF-32 code unit for printable/break; nil for escape/backspace/forwardDelete/modifier/other.
     var scalarValue: UInt32? {
         switch kind {
         case .printable(let s), .breakKey(let s):
             return s.value
-        case .escape, .delete, .modifier, .other:
+        case .escape, .backspace, .forwardDelete, .modifier, .other:
             return nil
         }
     }
@@ -139,10 +142,6 @@ enum KeyClassifier {
         KeyCode.capsLock, KeyCode.function,
     ]
 
-    private static let deleteCodes: Set<UInt16> = [
-        KeyCode.delete, KeyCode.forwardDelete,
-    ]
-
     private static let navigationCodes: Set<UInt16> = [
         KeyCode.leftArrow, KeyCode.rightArrow, KeyCode.upArrow, KeyCode.downArrow,
         KeyCode.home, KeyCode.end, KeyCode.pageUp, KeyCode.pageDown,
@@ -176,10 +175,18 @@ enum KeyClassifier {
             return withKind(base, .other)
         }
 
-        // First-class Delete/Backspace (P0): pipeline may wipe provisional and consume.
-        if deleteCodes.contains(input.keyCode) {
+        // Backspace (51): compose-aware per-character edit. Forward Delete (117): separate policy.
+        if input.keyCode == KeyCode.delete {
             return ClassifiedKey(
-                kind: .delete,
+                kind: .backspace,
+                keyCode: input.keyCode,
+                isRepeat: input.isRepeat,
+                shiftHeld: input.shift
+            )
+        }
+        if input.keyCode == KeyCode.forwardDelete {
+            return ClassifiedKey(
+                kind: .forwardDelete,
                 keyCode: input.keyCode,
                 isRepeat: input.isRepeat,
                 shiftHeld: input.shift

@@ -65,6 +65,13 @@ final class DauCoreBridge {
         return Self.mapResult(dau_escape(engineAsC))
     }
 
+    /// Backspace one display Unicode scalar while composing (`dau_backspace`).
+    /// Returns `UpdatePreedit` with the new preedit (may be empty), or `None` when
+    /// the compose buffer is already empty (host should pass the physical key).
+    func backspace() -> CoreMappedResult {
+        return Self.mapResult(dau_backspace(engineAsC))
+    }
+
     func clear() {
         dau_clear(engineAsC)
     }
