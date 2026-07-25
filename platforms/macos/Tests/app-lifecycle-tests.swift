@@ -170,6 +170,19 @@ final class AppLifecycleTests: XCTestCase {
         XCTAssertEqual(state.menuBarIconState, .setup)
     }
 
+    func testOnboardingRequiresPostEventPermissionWhenTapIsRunning() {
+        let suite = "dau.tg00.onboarding-post-access"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let state = AppState(defaults: defaults)
+        state.accessibilityTrusted = true
+        state.eventTapRunning = true
+        state.postEventAccessGranted = false
+
+        XCTAssertEqual(state.onboardingPhase, .needsPostEventAccess)
+        XCTAssertFalse(state.onboardingPhase == .ready)
+    }
+
     // MARK: - SyntheticPostAccess cache (no prompt on hot path default)
 
     func testSyntheticPostAccessDefaultCheckReadsCacheOnly() {
@@ -187,5 +200,78 @@ final class AppLifecycleTests: XCTestCase {
         XCTAssertFalse(SyntheticPostAccess.isGranted)
         XCTAssertEqual(calls, 1)
         SyntheticPostAccess.resetToDefault()
+    }
+
+    // MARK: - Toggle hotkey recovery (AX late / restart / wake)
+
+    func testToggleHotkeyRecoveryRegistersWhenPreviouslyFailed() {
+        // AppDelegate.ensureToggleHotkeyRegistered uses this policy on
+        // attemptStartTap(success), restartTap, and handleSleepWake recreate.
+        XCTAssertEqual(
+            ToggleHotkeyRecoveryPolicy.action(isRecording: false, isRegistered: false),
+            .register,
+            "recovery must retry when launch install failed"
+        )
+    }
+
+    func testToggleHotkeyRecoveryNoopWhenAlreadyRegistered() {
+        XCTAssertEqual(
+            ToggleHotkeyRecoveryPolicy.action(isRecording: false, isRegistered: true),
+            .noop,
+            "must not tear down a live modifier-only tap on AX poll"
+        )
+    }
+
+    func testToggleHotkeyRecoveryClearsWhileRecording() {
+        XCTAssertEqual(
+            ToggleHotkeyRecoveryPolicy.action(isRecording: true, isRegistered: true),
+            .clear
+        )
+        XCTAssertEqual(
+            ToggleHotkeyRecoveryPolicy.action(isRecording: true, isRegistered: false),
+            .clear
+        )
+    }
+
+    func testToggleHotkeyRecoveryPathEndToEndWithRegistrar() {
+        // Mirrors AppDelegate recovery: failed at launch → AX ready → ensure.
+        let reg = ToggleHotkeyRegistrar()
+        defer { reg.unregister() }
+        let chord = ToggleHotkey.commandShiftOnly
+
+        reg.testForceRegistrationResult = false
+        reg.register(chord)
+        XCTAssertFalse(reg.isRegistered)
+
+        let action = ToggleHotkeyRecoveryPolicy.action(
+            isRecording: false,
+            isRegistered: reg.isRegistered
+        )
+        XCTAssertEqual(action, .register)
+
+        reg.testForceRegistrationResult = true
+        switch action {
+        case .register:
+            reg.registerIfNeeded(chord)
+        case .clear, .noop:
+            XCTFail("expected .register after failed launch install")
+        }
+        XCTAssertTrue(reg.isRegistered)
+
+        // Subsequent recovery ticks must not reinstall.
+        let again = ToggleHotkeyRecoveryPolicy.action(
+            isRecording: false,
+            isRegistered: reg.isRegistered
+        )
+        XCTAssertEqual(again, .noop)
+        let gen = reg.registrationGeneration
+        reg.testForceRegistrationResult = false
+        if again == .noop {
+            // AppDelegate breaks; does not call register.
+        } else {
+            reg.registerIfNeeded(chord)
+        }
+        XCTAssertEqual(reg.registrationGeneration, gen)
+        XCTAssertTrue(reg.isRegistered)
     }
 }

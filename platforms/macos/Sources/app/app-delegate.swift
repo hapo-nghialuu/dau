@@ -54,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         // Capability snapshot for inject path — no prompt on launch.
-        SyntheticPostAccess.refreshFromSystem(prompt: false)
+        refreshPostEventAccess(prompt: false)
 
         typingSession.onInjectCompleted = { result in
             if case .failure = result {
@@ -104,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         focusObserver.onFocusChange = { [weak self] _, _ in
             self?.typingSession.resetCompose()
             // Refresh post-access cache off the keyboard hot path when focus changes.
-            SyntheticPostAccess.refreshFromSystem(prompt: false)
+            self?.refreshPostEventAccess(prompt: false)
             self?.refreshProfileCache()
             self?.syncUI()
         }
@@ -139,7 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // First-run / recovery: show setup until AX trusted AND keyboard listener runs.
         // Trusted-but-tap-failed must not be treated as success (ONBOARD-03).
-        if !state.accessibilityTrusted || !state.eventTapRunning {
+        if !state.accessibilityTrusted || !state.eventTapRunning || !state.postEventAccessGranted {
             onboarding.show()
         }
 
@@ -210,9 +210,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = KeyboardEventTap.isAccessibilityTrusted(prompt: true)
             state.accessibilityTrusted = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
             // Post-event access prompt only from setup/recovery UI — never keyboard callback.
-            SyntheticPostAccess.refreshFromSystem(prompt: true)
+            refreshPostEventAccess(prompt: true)
         } else {
-            SyntheticPostAccess.refreshFromSystem(prompt: false)
+            refreshPostEventAccess(prompt: false)
         }
 
         if state.accessibilityTrusted {
@@ -224,6 +224,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 // Healthy start: AX poll can stop (restarted if trust/tap drops).
                 stopAXPollingIfHealthy()
+                // AX may have been late at launch — retry toggle hotkey only if not live.
+                ensureToggleHotkeyRegistered()
             }
         } else {
             eventTap.stopClean()
@@ -237,7 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func restartTap() {
         typingSession.resetCompose()
         state.accessibilityTrusted = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
-        SyntheticPostAccess.refreshFromSystem(prompt: false)
+        refreshPostEventAccess(prompt: false)
         if state.accessibilityTrusted {
             let ok = eventTap.restart(promptForAccessibility: false)
             syncEventTapStateToUI(fallbackDetail: ok ? nil : "event tap restart failed")
@@ -251,6 +253,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             syncEventTapStateToUI(fallbackDetail: "need Accessibility")
             startAXPolling()
         }
+        // Recovery path: reinstall toggle hotkey only when previous install failed.
+        ensureToggleHotkeyRegistered()
         refreshProfileCache()
         syncUI()
         onboarding.refreshStatus()
@@ -264,6 +268,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return false
         }()
         var detail = fallbackDetail
+        if state.accessibilityTrusted && running && !state.postEventAccessGranted {
+            detail = "need post-event access"
+        }
         if detail == nil {
             switch eventTap.status {
             case .running(let place):
@@ -302,13 +309,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopAXPollingIfHealthy() {
-        if state.accessibilityTrusted && state.eventTapRunning && !state.eventTapDegraded {
+        if state.accessibilityTrusted && state.eventTapRunning &&
+            state.postEventAccessGranted && !state.eventTapDegraded {
             stopAXPolling()
         }
     }
 
     private func pollAccessibility() {
         let trusted = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
+        refreshPostEventAccess(prompt: false)
         let decision = AccessibilityPollEngine.evaluate(
             trusted: trusted,
             wasTrusted: state.accessibilityTrusted,
@@ -323,7 +332,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if decision.stopTap {
             eventTap.stopClean()
             typingSession.resetComposeAsync()
-            SyntheticPostAccess.refreshFromSystem(prompt: false)
             syncEventTapStateToUI()
         }
         if decision.attemptStartTap {
@@ -333,7 +341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             syncUI()
             onboarding.refreshStatus()
         }
-        if decision.stopPolling {
+        if decision.stopPolling && state.postEventAccessGranted {
             stopAXPolling()
             return
         }
@@ -387,7 +395,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Trust re-check without prompt on every edge.
         let trusted = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
         state.accessibilityTrusted = trusted
-        SyntheticPostAccess.refreshFromSystem(prompt: false)
+        refreshPostEventAccess(prompt: false)
 
         let decision = sleepWakeEngine.handle(phase, accessibilityTrusted: trusted)
         state.lastLifecycleTransition = decision.transitionLabel
@@ -427,11 +435,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 syncEventTapStateToUI(fallbackDetail: "need Accessibility")
                 startAXPolling()
             }
+            // Wake path never tore down hotkey tap explicitly, but launch may have
+            // left it unregistered when AX was late — retry only if still missing.
+            ensureToggleHotkeyRegistered()
             typingSession.resetComposeAsync()
             refreshProfileCache()
             syncUI()
             onboarding.refreshStatus()
         }
+    }
+
+    /// Refresh and mirror post-event capability outside the keyboard callback.
+    private func refreshPostEventAccess(prompt: Bool) {
+        SyntheticPostAccess.refreshFromSystem(prompt: prompt)
+        state.applyPostEventAccessMirror(granted: SyntheticPostAccess.cachedGranted)
     }
 
     // MARK: - Menu / onboarding wiring
@@ -539,12 +556,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         syncUI()
     }
 
+    /// Force rebind (settings change / launch). Always tears down then installs.
     private func reregisterToggleHotkey() {
         guard !state.isRecordingToggleHotkey else {
             toggleHotkeyRegistrar.clearHotKey()
             return
         }
         toggleHotkeyRegistrar.register(state.toggleHotkey)
+    }
+
+    /// Recovery path (AX ready / restart / wake): install only when not already live.
+    /// Must NOT call `register` while registered — that clears the running mod-only tap.
+    private func ensureToggleHotkeyRegistered() {
+        switch ToggleHotkeyRecoveryPolicy.action(
+            isRecording: state.isRecordingToggleHotkey,
+            isRegistered: toggleHotkeyRegistrar.isRegistered
+        ) {
+        case .clear:
+            toggleHotkeyRegistrar.clearHotKey()
+        case .noop:
+            break
+        case .register:
+            toggleHotkeyRegistrar.registerIfNeeded(state.toggleHotkey)
+        }
     }
 
     private func setEngineMethod(_ method: AppEngineMethod) {

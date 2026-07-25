@@ -50,6 +50,14 @@ enum MenuBarIconState: String, Sendable, Equatable, CaseIterable {
     }
 }
 
+/// Canonical onboarding readiness phase shared with the menu-bar app UI.
+enum AppOnboardingPhase: Equatable {
+    case needsAccessibility
+    case needsPostEventAccess
+    case ready
+    case setupFailed
+}
+
 /// UserDefaults keys for SET-06 persisted preferences.
 enum DauSettingsKey {
     static let typingEnabled = "dau.settings.typingEnabled"
@@ -102,6 +110,10 @@ final class AppState: ObservableObject {
 
     /// TCC Accessibility trust (not an entitlement).
     @Published var accessibilityTrusted: Bool = false
+
+    /// Last known Core Graphics synthetic post-event capability.
+    /// Mirrored by AppDelegate; AppState never queries TCC directly.
+    @Published var postEventAccessGranted: Bool = false
 
     /// Last known event-tap status for menu diagnostics.
     /// Must always reflect real tap status (including failed watchdog restart / degraded stop).
@@ -168,8 +180,8 @@ final class AppState: ObservableObject {
 
     /// Icon state: setup before active VI; blocked/tap-failed never map to `.active`.
     var menuBarIconState: MenuBarIconState {
-        // Setup incomplete: no AX trust, or tap not running after trust.
-        if !accessibilityTrusted || !eventTapRunning {
+        // Setup incomplete: missing AX, tap, or synthetic post-event access.
+        if !accessibilityTrusted || !eventTapRunning || !postEventAccessGranted {
             return .setup
         }
         // Trusted + tap up, but must not look like active VI when blocked or EN.
@@ -187,7 +199,10 @@ final class AppState: ObservableObject {
             if !accessibilityTrusted {
                 return "Dấu — cần cấp quyền Accessibility · bật/tắt \(sc)"
             }
-            return "Dấu — event tap chưa chạy · bật/tắt \(sc)"
+            if !eventTapRunning {
+                return "Dấu — event tap chưa chạy · bật/tắt \(sc)"
+            }
+            return "Dấu — cần quyền gửi sự kiện để gõ · bật/tắt \(sc)"
         case .active:
             return "Dấu — VI (đang gõ tiếng Việt) · bật/tắt \(sc)"
         case .inactive:
@@ -203,6 +218,15 @@ final class AppState: ObservableObject {
         let sc = toggleShortcutDisplay
         switch menuBarIconState {
         case .setup:
+            if !accessibilityTrusted {
+                return "Dấu — chưa sẵn sàng · cần cấp quyền Accessibility · bật/tắt \(sc)"
+            }
+            if !eventTapRunning {
+                return "Dấu — chưa sẵn sàng · event tap chưa chạy · bật/tắt \(sc)"
+            }
+            if !postEventAccessGranted {
+                return "Dấu — chưa sẵn sàng · cần quyền gửi sự kiện · bật/tắt \(sc)"
+            }
             return "Dấu — chưa sẵn sàng · bật/tắt \(sc)"
         case .active:
             return "Dấu — VI · bật/tắt \(sc)"
@@ -217,13 +241,19 @@ final class AppState: ObservableObject {
     /// Menu row for Accessibility diagnostic.
     /// Trusted + listener running = "đã cấp quyền · đang gõ" (not merely "đã cấp").
     var accessibilityMenuLabel: String {
+        if !accessibilityTrusted {
+            return "Accessibility: chưa cấp quyền…"
+        }
+        if !eventTapRunning {
+            return "Accessibility: đã cấp — đang khởi động…"
+        }
+        if !postEventAccessGranted {
+            return "Accessibility: đã cấp · thiếu quyền gửi sự kiện…"
+        }
         if accessibilityTrusted && eventTapRunning {
             return "Accessibility: đã cấp quyền · đang gõ"
         }
-        if accessibilityTrusted && !eventTapRunning {
-            return "Accessibility: đã cấp — đang khởi động…"
-        }
-        return "Accessibility: chưa cấp quyền…"
+        return "Accessibility: chưa sẵn sàng…"
     }
 
     /// Header subtitle: current method + toggle shortcut hint.
@@ -236,9 +266,16 @@ final class AppState: ObservableObject {
         toggleHotkey = .default
     }
 
-    /// True when user has granted Accessibility and the keyboard listener is up.
+    /// True when Accessibility, the keyboard listener, and post-event access are ready.
     var isReadyToType: Bool {
-        accessibilityTrusted && eventTapRunning && !eventTapDegraded
+        accessibilityTrusted && eventTapRunning && postEventAccessGranted && !eventTapDegraded
+    }
+
+    /// Readiness phase used by onboarding without querying OS permissions.
+    var onboardingPhase: AppOnboardingPhase {
+        guard accessibilityTrusted else { return .needsAccessibility }
+        guard postEventAccessGranted else { return .needsPostEventAccess }
+        return eventTapRunning ? .ready : .setupFailed
     }
 
     /// Apply live tap mirror fields from `KeyboardEventTap` (main-thread UI).
@@ -248,6 +285,18 @@ final class AppState: ObservableObject {
         eventTapGeneration = generation
         if let detail {
             statusDetail = detail
+        }
+    }
+
+    /// Apply the cached synthetic post-event capability from AppDelegate.
+    func applyPostEventAccessMirror(granted: Bool) {
+        postEventAccessGranted = granted
+        if granted {
+            if statusDetail == "need post-event access" {
+                statusDetail = ""
+            }
+        } else if accessibilityTrusted && eventTapRunning {
+            statusDetail = "need post-event access"
         }
     }
 

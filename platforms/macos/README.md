@@ -168,6 +168,7 @@ Script **không** ghi TCC database.
 | **Cmd/Ctrl/Option+Delete** + navigation | Boundary app-level: reset compose + forward shortcut/key |
 | **EN / passthrough** | Fail-open: không kẹt callback; original key đi qua |
 | **Menu VI/EN + tap status** | Phản ánh **trạng thái tap thật** (`eventTapRunning` / degraded/stopped), không báo “đang chạy” khi tap đã fail |
+| **Badge "VI"** | Chỉ hiện khi **thật sự gõ được**: AX trusted **và** tap running **và** *quyền post-event đã cấp* **và** không bị input-source block **và** VI đang bật. Thiếu quyền post-event là cổng TCC **riêng** với Accessibility — trước đây không được xét nên badge báo "VI" trong khi mọi phím pass-through. Nay trạng thái đó ra `.setup`, onboarding không auto-close, CTA gọi được `CGRequestPostEventAccess` một lần |
 
 ### TG-00 fail-open (code đã land; live soak **chưa** chạy)
 
@@ -262,7 +263,18 @@ Menu **Cài đặt…** (`⌘,`) mở cửa sổ **700×480**, sidebar + content
 
 Prefs: `dau.settings.{typingEnabled,engineMethod,autoRestore,autoCapitalize,toggleHotkey}` (+ optional `launchAtLoginDesired` reserved).
 
-**Phím tắt bật/tắt (VI/EN):** mặc định `⇧⌘E` (Cmd+Shift+E). Cấu hình trong **Cài đặt → Phím tắt → Đổi…** (cần ≥1 trong ⌘/⌃/⌥). Global qua Carbon `RegisterEventHotKey` (menu đóng vẫn chạy). Menu header + tooltip hiển thị tổ hợp hiện tại; `NSMenuItem` keyEquivalent cập nhật theo shortcut.
+**Phím tắt bật/tắt (VI/EN):** mặc định `⇧⌘E` (Cmd+Shift+E). Cấu hình trong **Cài đặt → Phím tắt → Đổi…**. Hai dạng hợp lệ: phím + ≥1 trong ⌘/⌃/⌥, hoặc **chord chỉ-modifier ≥2 phím** (ví dụ `⌘⇧`).
+
+Hai đường đăng ký khác nhau, không thể gộp:
+
+| Dạng | Cơ chế | Ghi chú |
+|------|--------|---------|
+| Phím + modifier (`⇧⌘E`) | Carbon `RegisterEventHotKey` | Carbon không đăng ký được chord chỉ-modifier |
+| Chỉ modifier (`⌘⇧`) | `CGEventTap` `.listenOnly` trên `flagsChanged` | Cần Accessibility để tạo tap |
+
+Đăng ký được **thử lại** ở các đường phục hồi (`attemptStartTap` khi tap lên, `restartTap`, sau wake) khi lần trước thất bại — cấp Accessibility muộn không còn làm phím tắt chết vĩnh viễn. Retry chỉ chạy khi chưa đăng ký thành công, không tear-down tap đang chạy tốt.
+
+Menu header + tooltip hiển thị tổ hợp hiện tại. `NSMenuItem` toggle **cố ý** để `keyEquivalent: ""` — tránh double-toggle với đường global ở trên.
 
 Không gồm: update checker, full inject matrix UI, conflict matrix với system shortcuts.
 

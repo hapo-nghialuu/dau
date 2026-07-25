@@ -65,6 +65,16 @@ final class ToggleHotkeyRegistrar {
 
     var onHotkey: (() -> Void)?
 
+    /// True when Carbon hotkey or modifier-only tap is actively installed.
+    private(set) var isRegistered = false
+    /// True after a valid hotkey failed to install (AX/tap/Carbon). Cleared on success.
+    private(set) var lastRegisterAttemptFailed = false
+    /// Bumps only on successful install — used by tests to detect tear-down/recreate.
+    private(set) var registrationGeneration: UInt = 0
+
+    /// Unit-test override: when set, skips OS registration and forces this result.
+    var testForceRegistrationResult: Bool?
+
     private var hotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
     private var selfPointer: UnsafeMutableRawPointer?
@@ -75,6 +85,8 @@ final class ToggleHotkeyRegistrar {
     /// True after we have seen the exact chord down; fire once on first full match.
     private var modifierChordArmed = false
     private var lastModifierMatch = false
+    /// Metadata for retry logs — never key content.
+    private var lastRegisterKind: String = "none"
 
     fileprivate var modifierTapPort: CFMachPort?
     private var modifierRunLoopSource: CFRunLoopSource?
@@ -84,6 +96,7 @@ final class ToggleHotkeyRegistrar {
     }
 
     /// Replace the active global hotkey. Invalid hotkeys clear registration only.
+    /// Always tears down first — use `registerIfNeeded` on recovery paths.
     func register(_ hotkey: ToggleHotkey) {
         clearHotKey()
         guard hotkey.isValid else { return }
@@ -93,6 +106,24 @@ final class ToggleHotkeyRegistrar {
         } else {
             registerCarbonKey(hotkey)
         }
+    }
+
+    /// Recovery-safe register: no-op when already registered (does not tear down live tap).
+    @discardableResult
+    func registerIfNeeded(_ hotkey: ToggleHotkey) -> Bool {
+        if isRegistered {
+            return true
+        }
+        let hadFailed = lastRegisterAttemptFailed
+        register(hotkey)
+        if isRegistered && hadFailed {
+            // Metadata only — kind, not key content.
+            fputs(
+                "[dau] toggle hotkey retry succeeded kind=\(lastRegisterKind) gen=\(registrationGeneration)\n",
+                stderr
+            )
+        }
+        return isRegistered
     }
 
     /// Drop the hotkey only (e.g. while recording). Handler stays for re-register.
@@ -105,6 +136,7 @@ final class ToggleHotkeyRegistrar {
         modifierOnlyHotkey = nil
         modifierChordArmed = false
         lastModifierMatch = false
+        isRegistered = false
     }
 
     /// Full teardown (app quit).
@@ -152,7 +184,15 @@ final class ToggleHotkeyRegistrar {
     // MARK: - Carbon (key + modifiers)
 
     private func registerCarbonKey(_ hotkey: ToggleHotkey) {
-        guard let code = hotkey.keyCode else { return }
+        lastRegisterKind = "carbon"
+        if let forced = testForceRegistrationResult {
+            applyForcedRegistrationResult(forced, kind: "carbon")
+            return
+        }
+        guard let code = hotkey.keyCode else {
+            markRegistrationFailed(kind: "carbon", detail: "missing keyCode")
+            return
+        }
         installHandlerIfNeeded()
 
         var hotKeyID = EventHotKeyID(
@@ -170,15 +210,25 @@ final class ToggleHotkeyRegistrar {
         )
         if status == noErr {
             hotKeyRef = ref
+            markRegistrationSucceeded(kind: "carbon")
         } else {
-            fputs("[dau] RegisterEventHotKey failed status=\(status)\n", stderr)
             hotKeyRef = nil
+            markRegistrationFailed(kind: "carbon", detail: "status=\(status)")
         }
     }
 
     // MARK: - Modifier-only (flagsChanged tap)
 
     private func registerModifierOnly(_ hotkey: ToggleHotkey) {
+        lastRegisterKind = "modifierOnly"
+        if let forced = testForceRegistrationResult {
+            applyForcedRegistrationResult(forced, kind: "modifierOnly")
+            if forced {
+                modifierOnlyHotkey = hotkey
+                lastModifierMatch = false
+            }
+            return
+        }
         modifierOnlyHotkey = hotkey
         lastModifierMatch = false
         let pointer = Unmanaged.passUnretained(self).toOpaque()
@@ -202,8 +252,8 @@ final class ToggleHotkeyRegistrar {
             }
         }
         guard let port = created else {
-            fputs("[dau] modifier-only hotkey tap create failed\n", stderr)
             modifierOnlyHotkey = nil
+            markRegistrationFailed(kind: "modifierOnly", detail: "tapCreate nil")
             return
         }
         modifierTapPort = port
@@ -213,7 +263,31 @@ final class ToggleHotkeyRegistrar {
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         }
         CGEvent.tapEnable(tap: port, enable: true)
+        markRegistrationSucceeded(kind: "modifierOnly")
         fputs("[dau] modifier-only hotkey registered \(hotkey.displayString)\n", stderr)
+    }
+
+    private func applyForcedRegistrationResult(_ forced: Bool, kind: String) {
+        if forced {
+            markRegistrationSucceeded(kind: kind)
+        } else {
+            markRegistrationFailed(kind: kind, detail: "testForce=false")
+        }
+    }
+
+    private func markRegistrationSucceeded(kind: String) {
+        lastRegisterKind = kind
+        isRegistered = true
+        lastRegisterAttemptFailed = false
+        registrationGeneration &+= 1
+    }
+
+    private func markRegistrationFailed(kind: String, detail: String) {
+        lastRegisterKind = kind
+        isRegistered = false
+        lastRegisterAttemptFailed = true
+        // Metadata only — kind + detail, never key content.
+        fputs("[dau] toggle hotkey register failed kind=\(kind) \(detail)\n", stderr)
     }
 
     private func stopModifierTap() {
@@ -254,6 +328,27 @@ final class ToggleHotkeyRegistrar {
             Unmanaged<ToggleHotkeyRegistrar>.fromOpaque(pointer).release()
             selfPointer = nil
         }
+    }
+}
+
+// MARK: - Recovery policy (AX poll / restart / wake)
+
+/// Action for recovery-path hotkey ensure (not settings force-rebind).
+enum ToggleHotkeyRecoveryAction: Equatable {
+    /// Recording in progress — drop active hotkey so the new combo is not captured.
+    case clear
+    /// Already installed — do not call `register` (would tear down live tap).
+    case noop
+    /// Not registered — attempt install.
+    case register
+}
+
+/// Pure policy used by AppDelegate recovery paths.
+enum ToggleHotkeyRecoveryPolicy {
+    static func action(isRecording: Bool, isRegistered: Bool) -> ToggleHotkeyRecoveryAction {
+        if isRecording { return .clear }
+        if isRegistered { return .noop }
+        return .register
     }
 }
 

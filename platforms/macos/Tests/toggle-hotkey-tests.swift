@@ -158,4 +158,77 @@ final class ToggleHotkeyTests: XCTestCase {
         XCTAssertFalse(ToggleHotkey.default.isModifierOnly)
     }
 
+    // MARK: - Registrar registration state / retry
+
+    func testRegistrarTracksFailureThenRetrySuccess() {
+        let reg = ToggleHotkeyRegistrar()
+        defer { reg.unregister() }
+        let chord = ToggleHotkey.commandShiftOnly
+
+        reg.testForceRegistrationResult = false
+        reg.register(chord)
+        XCTAssertFalse(reg.isRegistered)
+        XCTAssertTrue(reg.lastRegisterAttemptFailed)
+        let genAfterFail = reg.registrationGeneration
+
+        reg.testForceRegistrationResult = true
+        let ok = reg.registerIfNeeded(chord)
+        XCTAssertTrue(ok)
+        XCTAssertTrue(reg.isRegistered)
+        XCTAssertFalse(reg.lastRegisterAttemptFailed)
+        XCTAssertEqual(reg.registrationGeneration, genAfterFail &+ 1)
+    }
+
+    func testRegisterIfNeededDoesNotTearDownWhenAlreadyRegistered() {
+        let reg = ToggleHotkeyRegistrar()
+        defer { reg.unregister() }
+        let chord = ToggleHotkey.commandShiftOnly
+
+        reg.testForceRegistrationResult = true
+        reg.register(chord)
+        XCTAssertTrue(reg.isRegistered)
+        let gen = reg.registrationGeneration
+
+        // Would flip to failed if register() were re-entered (clear + forced fail).
+        reg.testForceRegistrationResult = false
+        reg.registerIfNeeded(chord)
+        reg.registerIfNeeded(chord)
+        reg.registerIfNeeded(chord)
+
+        XCTAssertTrue(reg.isRegistered, "live registration must survive repeated ensure")
+        XCTAssertEqual(reg.registrationGeneration, gen, "must not tear down / recreate")
+        XCTAssertFalse(reg.lastRegisterAttemptFailed)
+    }
+
+    func testRegisterForceRebindAlwaysReinstalls() {
+        let reg = ToggleHotkeyRegistrar()
+        defer { reg.unregister() }
+
+        reg.testForceRegistrationResult = true
+        reg.register(ToggleHotkey.commandShiftOnly)
+        let gen = reg.registrationGeneration
+        XCTAssertTrue(reg.isRegistered)
+
+        // Settings-style force rebind must reinstall even when already live.
+        reg.register(ToggleHotkey.commandShiftOnly)
+        XCTAssertTrue(reg.isRegistered)
+        XCTAssertEqual(reg.registrationGeneration, gen &+ 1)
+    }
+
+    func testCarbonBranchTracksForcedFailureAndSuccess() {
+        let reg = ToggleHotkeyRegistrar()
+        defer { reg.unregister() }
+        let key = ToggleHotkey.default
+
+        reg.testForceRegistrationResult = false
+        reg.register(key)
+        XCTAssertFalse(reg.isRegistered)
+        XCTAssertTrue(reg.lastRegisterAttemptFailed)
+
+        reg.testForceRegistrationResult = true
+        reg.registerIfNeeded(key)
+        XCTAssertTrue(reg.isRegistered)
+        XCTAssertFalse(reg.lastRegisterAttemptFailed)
+    }
+
 }

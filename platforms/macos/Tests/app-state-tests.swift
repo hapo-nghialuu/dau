@@ -6,6 +6,7 @@ final class AppStateTests: XCTestCase {
     private func makeTrustedRunning(state: AppState) {
         state.accessibilityTrusted = true
         state.eventTapRunning = true
+        state.postEventAccessGranted = true
         state.inputSourceBlocked = false
     }
 
@@ -30,6 +31,16 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(state.menuBarIconState, .setup)
         XCTAssertNotEqual(state.menuBarIconState, .active)
         XCTAssertEqual(state.menuBarIconState.assetName, "MenuBarSetup")
+    }
+
+    func testIconStateSetupWhenPostEventAccessMissing() {
+        let state = AppState()
+        makeTrustedRunning(state: state)
+        state.postEventAccessGranted = false
+        state.typingEnabled = true
+        XCTAssertEqual(state.menuBarIconState, .setup)
+        XCTAssertFalse(state.isReadyToType)
+        XCTAssertEqual(state.menuBarTitle, "EN")
     }
 
     func testIconStateActiveVI() {
@@ -129,6 +140,15 @@ final class AppStateTests: XCTestCase {
         XCTAssertTrue(state.menuBarAccessibilityLabel.contains("chưa sẵn sàng"))
         XCTAssertTrue(state.menuBarToolTip.contains("event tap") || state.menuBarToolTip.contains("chưa chạy"))
         XCTAssertTrue(state.menuBarToolTip.contains(state.toggleShortcutDisplay))
+    }
+
+    func testToolTipAndAccessibilityForMissingPostEventAccess() {
+        let state = AppState()
+        makeTrustedRunning(state: state)
+        state.postEventAccessGranted = false
+        XCTAssertTrue(state.menuBarToolTip.contains("quyền gửi sự kiện"))
+        XCTAssertTrue(state.menuBarAccessibilityLabel.contains("quyền gửi sự kiện"))
+        XCTAssertTrue(state.accessibilityMenuLabel.contains("thiếu quyền gửi sự kiện"))
     }
 
     func testToolTipAndAccessibilityForVI() {

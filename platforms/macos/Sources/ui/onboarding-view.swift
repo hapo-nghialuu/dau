@@ -13,6 +13,8 @@ final class OnboardingController: NSObject {
         case needsPermission
         /// AX trusted and keyboard listener running.
         case ready
+        /// AX trusted, but synthetic post-event access is missing.
+        case needsPostEventPermission
         /// AX trusted but listener failed to start — actionable retry.
         case setupFailed
     }
@@ -90,10 +92,16 @@ final class OnboardingController: NSObject {
     }
 
     func currentPhase() -> Phase {
-        if state.accessibilityTrusted {
-            return state.eventTapRunning ? .ready : .setupFailed
+        switch state.onboardingPhase {
+        case .needsAccessibility:
+            return .needsPermission
+        case .needsPostEventAccess:
+            return .needsPostEventPermission
+        case .ready:
+            return .ready
+        case .setupFailed:
+            return .setupFailed
         }
-        return .needsPermission
     }
 
     // MARK: - Layout
@@ -254,6 +262,23 @@ final class OnboardingController: NSObject {
             window?.title = "Dấu — Sẵn sàng"
             scheduleReadyCloseIfNeeded()
 
+        case .needsPostEventPermission:
+            readyCloseWorkItem?.cancel()
+            readyCloseWorkItem = nil
+            titleLabel?.stringValue = "Cần thêm quyền để gõ"
+            bodyLabel?.stringValue =
+                "Dấu đã có quyền Trợ năng và đang theo dõi bàn phím, nhưng cần quyền gửi sự kiện "
+                + "để thay thế chữ đang gõ. Bấm Cấp quyền để tiếp tục."
+            statusLabel?.stringValue = "Thiếu quyền gửi sự kiện — chưa sẵn sàng."
+            statusLabel?.textColor = .systemOrange
+            primaryButton?.title = "Cấp quyền…"
+            primaryButton?.isHidden = false
+            primaryButton?.isEnabled = true
+            secondaryButton?.title = "Mở Cài đặt hệ thống…"
+            secondaryButton?.isHidden = false
+            secondaryButton?.isEnabled = true
+            window?.title = "Dấu — Cần quyền gửi sự kiện"
+
         case .setupFailed:
             readyCloseWorkItem?.cancel()
             readyCloseWorkItem = nil
@@ -295,6 +320,10 @@ final class OnboardingController: NSObject {
             // Valid AX prompt path (does not write TCC DB).
             onRequestAccessibilityPrompt?()
             refreshStatus()
+        case .needsPostEventPermission:
+            // Reuse the existing setup path; it prompts for post-event access too.
+            onRequestAccessibilityPrompt?()
+            refreshStatus()
         case .ready:
             close()
         case .setupFailed:
@@ -305,7 +334,7 @@ final class OnboardingController: NSObject {
 
     @objc private func handleSecondary() {
         switch currentPhase() {
-        case .needsPermission, .setupFailed:
+        case .needsPermission, .needsPostEventPermission, .setupFailed:
             onOpenSystemSettings?()
         case .ready:
             break
