@@ -170,10 +170,7 @@ fn is_ua_breve_nucleus(chars: &[CompChar], nucleus: (usize, usize)) -> bool {
     }
     let u = &chars[nucleus.0];
     let a = &chars[nucleus.0 + 1];
-    u.base == 'u'
-        && u.mark == Mark::None
-        && a.base == 'a'
-        && a.mark == Mark::Breve
+    u.base == 'u' && u.mark == Mark::None && a.base == 'a' && a.mark == Mark::Breve
 }
 
 fn mark_compatible(c: &CompChar) -> bool {

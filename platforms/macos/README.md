@@ -156,6 +156,27 @@ Script **không** ghi TCC database.
 | Restart tap | Sau khi cấp AX hoặc tap bị disable |
 | Quit | Thoát sạch |
 
+## Contract gõ / delete (TG-01..04 + TG-00) — **hiện tại**
+
+**Không** còn contract “Backspace xóa cả provisional word”. Behavior mong muốn và code hiện tại:
+
+| Phím / tình huống | Contract |
+|-------------------|----------|
+| **Backspace (key 51)** khi đang compose | Xóa **đúng một** Unicode scalar đang hiển thị qua core `dau_backspace`; gõ tiếp tiếp tục compose trên buffer đã edit |
+| **Backspace** buffer rỗng / idle | Pass-through (app nhận key gốc); không inject |
+| **Forward Delete (key 117)** | Pass-through + **reset compose** (policy tường minh); **không** wipe provisional bằng inject Backspace |
+| **Cmd/Ctrl/Option+Delete** + navigation | Boundary app-level: reset compose + forward shortcut/key |
+| **EN / passthrough** | Fail-open: không kẹt callback; original key đi qua |
+| **Menu VI/EN + tap status** | Phản ánh **trạng thái tap thật** (`eventTapRunning` / degraded/stopped), không báo “đang chạy” khi tap đã fail |
+
+### TG-00 fail-open (code đã land; live soak **chưa** chạy)
+
+- Keyboard **không được freeze** toàn hệ thống vì Dấu.
+- Nếu callback/dependency kẹt hoặc health fail: tap có thể **degraded/stopped** để macOS pass phím (fail-open) — đây là degraded OK, **không** phải full product PASS.
+- Quit Dấu không còn là cách “cứu” bàn phím bắt buộc sau idle/sleep (mục tiêu code); **chưa** có biên nhận soak 30 phút / sleep-wake trên máy user.
+
+Unit / XCTest **xanh không thay** smoke tay. Biên nhận unit: xem `docs/vietnamese-typing-corpus-results.md` và plan TG-06.
+
 ### 4. Gợi ý corpus smoke (user tự ghi PASS/FAIL)
 
 | App | Gõ | Kỳ vọng |
@@ -168,18 +189,13 @@ Script **không** ghi TCC database.
 
 Tắt tạm OpenKey / Gõ Nhanh / IME khác khi so sánh.
 
-### 4b. Manual matrix — Backspace / Forward Delete + paste/media (TG-04)
+### 4b. Manual matrix — Backspace / Forward Delete + paste/media + delivery
 
-Unit tests **không** thay smoke tay. Contract hiện tại:
-
-- **Backspace (key 51)** khi đang compose: xóa **đúng một** Unicode scalar hiển thị qua core (`dau_backspace`); gõ tiếp tiếp tục compose trên buffer đã edit.
-- **Buffer rỗng / idle**: Backspace pass-through (app nhận key gốc).
-- **Forward Delete (key 117)**: **không** xóa cả provisional; pass-through + reset compose (policy tường minh).
-- **Cmd/Ctrl/Option+Delete** và navigation: boundary app-level (reset compose, forward).
+**Trạng thái (TG-06):** matrix dưới đây **bắt buộc user chạy tay**. **Chưa claim PASS** — chưa có biên nhận live app trên TextEdit / Terminal / browser / Electron.
 
 Ghi app / version / method / raw keys / expected / actual / PASS|FAIL.
 
-Chạy tối thiểu trên **TextEdit**, **Terminal.app**, một **browser contenteditable** (Safari/Chromium), và **chat** nơi đã smoke Dấu.
+Chạy tối thiểu trên **TextEdit**, **Terminal.app**, một **browser contenteditable** (Safari/Chromium), và **Electron/chat**.
 
 | # | Bối cảnh | Thao tác | Kỳ vọng |
 |---|----------|----------|---------|
@@ -191,10 +207,14 @@ Chạy tối thiểu trên **TextEdit**, **Terminal.app**, một **browser conte
 | D4 | Idle (không compose) | Backspace / Forward Delete | Pass-through bình thường của app |
 | D4b | Đang compose | Forward Delete | Pass-through + reset compose; **không** wipe cả từ bằng inject |
 | D5 | Đổi method | Backspace hết buffer → chuyển Telex↔VNI → gõ từ mới | Word mới đúng method; không dính provisional cũ |
+| E1 | English plain | `delete` + Space lặp 100 (TextEdit + Terminal + browser + Electron) | `delete ` đúng một lần/vòng; 0 mất/dup |
+| E2 | Telex/VNI common | `tieengs` / `tie6ng1` / `dduaw` lặp theo profile | 0 mất/dup/break sai |
 | P1 | Idle | Cmd+V paste **plain text** | Dấu không nuốt shortcut; text dán đúng; gõ `tieengs` sau đó sạch |
 | P2 | Đang compose | Gõ dở → Cmd+V paste **plain text** | Shortcut pass-through; compose reset; sau paste gõ từ mới **không** dính/lặp |
 | P3 | Idle | Cmd+V paste **image** hoặc **GIF** | Không nuốt Cmd+V; không inject ký tự lạ; word kế tiếp sạch |
 | P4 | Đang compose | Gõ dở → paste **image/GIF** | Giống P3 + state compose không “dính” vào media |
+| S7a | EN + VI | Idle 30 phút (màn hình sáng) → gõ `delete ` + `tieengs` | Không freeze; không cần quit Dấu |
+| S7b | EN + VI | Display sleep/wake, system sleep/wake, lock/unlock ×5 | Sau mỗi vòng gõ được ngay; UI VI/EN khớp tap thật |
 
 ### 5. Rebuild → re-test
 
@@ -255,15 +275,15 @@ Mở: menu bar → **Cài đặt…** hoặc **Giới thiệu** (About page).
 - Developer ID + notarize (P4)
 - Core / Linux product changes
 
-## Receipt build (máy dev, tham chiếu)
-
-Lần chuẩn bị smoke (worktree `feature-macos-start`):
+## Receipt build / regression (máy dev, tham chiếu)
 
 | Field | Value |
 |-------|--------|
-| Command | `./scripts/build/macos.sh --debug` → exit **0** |
-| App | `platforms/macos/build/Debug/Dau.app` |
-| codesign --verify | OK |
-| HEAD | `ca4189c` (tại thời điểm build) |
-| arch | arm64 |
-| Smoke runtime | **user** — chưa claim PASS |
+| Product HEAD (TG-05) | `7523970` |
+| TG-00 / TG-01..04 | `d678cd4` / `5eb43fc` |
+| `cargo fmt --check` (core) | PASS (2026-07-25; sau `cargo fmt` formatting-only) |
+| `cargo test --manifest-path core/Cargo.toml` | **102** unit + **1** corpus PASS |
+| Corpus | 143 Telex + 143 VNI paired, 34 solo, 0 FAIL |
+| `xcodebuild test … platform=macOS` | **240** tests PASS |
+| Live smoke / idle soak | **user — chưa chạy; không claim PASS** |
+| Chi tiết | `docs/vietnamese-typing-corpus-results.md`, `plans/typing-gaps-dau-vs-gonhanh.md` |
