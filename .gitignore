@@ -6,8 +6,11 @@ plans/
 !plans/templates/
 .cafekit-backup/
 .cafekit.lock
-.claude/
+.claude
 .opencode/
+
+# OS / editor junk
+.DS_Store
 
 # Build artifacts
 /core/target/
