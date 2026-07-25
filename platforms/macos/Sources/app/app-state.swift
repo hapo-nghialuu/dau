@@ -104,13 +104,23 @@ final class AppState: ObservableObject {
     @Published var accessibilityTrusted: Bool = false
 
     /// Last known event-tap status for menu diagnostics.
+    /// Must always reflect real tap status (including failed watchdog restart / degraded stop).
     @Published var eventTapRunning: Bool = false
+
+    /// True when tap was intentionally left down (fail-open) after recovery failure.
+    @Published var eventTapDegraded: Bool = false
+
+    /// Current event-tap generation for diagnostics/telemetry (0 = never started).
+    @Published var eventTapGeneration: UInt64 = 0
 
     /// When true, current input source is non-Latin / foreign Vietnamese IME — do not inject.
     @Published var inputSourceBlocked: Bool = false
 
     /// Human-readable status line for menu (no key/text content).
     @Published var statusDetail: String = ""
+
+    /// Last sleep/wake transition label for metadata telemetry (never key content).
+    @Published var lastLifecycleTransition: String = ""
 
     /// Default display string (tests / fallback). Live UI uses `toggleShortcutDisplay`.
     static let defaultToggleShortcutDisplay = ToggleHotkey.default.displayString
@@ -228,7 +238,17 @@ final class AppState: ObservableObject {
 
     /// True when user has granted Accessibility and the keyboard listener is up.
     var isReadyToType: Bool {
-        accessibilityTrusted && eventTapRunning
+        accessibilityTrusted && eventTapRunning && !eventTapDegraded
+    }
+
+    /// Apply live tap mirror fields from `KeyboardEventTap` (main-thread UI).
+    func applyEventTapMirror(running: Bool, degraded: Bool, generation: UInt64, detail: String?) {
+        eventTapRunning = running
+        eventTapDegraded = degraded
+        eventTapGeneration = generation
+        if let detail {
+            statusDetail = detail
+        }
     }
 
     // MARK: - Persistence helpers
@@ -267,5 +287,131 @@ final class AppState: ObservableObject {
         if let data = try? JSONEncoder().encode(value) {
             defaults.set(data, forKey: DauSettingsKey.toggleHotkey)
         }
+    }
+}
+
+// MARK: - TG-00 pure lifecycle engines (unit-testable without NSApp)
+
+/// Decision from one AX poll tick. No `AXIsProcessTrusted` call inside — caller supplies snapshot.
+struct AccessibilityPollDecision: Equatable, Sendable {
+    /// Stop the poll timer (trusted + tap healthy).
+    var stopPolling: Bool
+    /// Start/restart the event tap without prompting.
+    var attemptStartTap: Bool
+    /// Tear down tap (trust lost).
+    var stopTap: Bool
+    /// Refresh onboarding/status UI.
+    var refreshUI: Bool
+}
+
+/// Pure AX poll policy: stop when trusted && tap healthy; never call AX from the keyboard callback.
+enum AccessibilityPollEngine {
+    static func evaluate(
+        trusted: Bool,
+        wasTrusted: Bool,
+        tapRunning: Bool,
+        tapDegraded: Bool
+    ) -> AccessibilityPollDecision {
+        // Healthy: trusted + running + not degraded → stop infinite main-loop AX polling.
+        if trusted && tapRunning && !tapDegraded {
+            return AccessibilityPollDecision(
+                stopPolling: true,
+                attemptStartTap: false,
+                stopTap: false,
+                refreshUI: true
+            )
+        }
+        if trusted != wasTrusted {
+            if trusted {
+                return AccessibilityPollDecision(
+                    stopPolling: false,
+                    attemptStartTap: true,
+                    stopTap: false,
+                    refreshUI: true
+                )
+            }
+            return AccessibilityPollDecision(
+                stopPolling: false,
+                attemptStartTap: false,
+                stopTap: true,
+                refreshUI: true
+            )
+        }
+        if trusted && !tapRunning {
+            // Permission ok but listener not running — recover without prompt spam.
+            return AccessibilityPollDecision(
+                stopPolling: false,
+                attemptStartTap: true,
+                stopTap: false,
+                refreshUI: true
+            )
+        }
+        // Still untrusted or degraded: keep polling at bounded cadence.
+        return AccessibilityPollDecision(
+            stopPolling: false,
+            attemptStartTap: false,
+            stopTap: false,
+            refreshUI: false
+        )
+    }
+}
+
+/// Sleep / wake / session lifecycle policy (workspace notifications).
+enum SleepWakePhase: String, Equatable, Sendable {
+    case willSleep
+    case didWake
+    case sessionResign
+    case sessionActive
+}
+
+struct SleepWakeDecision: Equatable, Sendable {
+    var stopAndReset: Bool
+    var recreateOnce: Bool
+    /// Never true for automatic wake recovery — prompts only from setup UI.
+    var promptPermission: Bool
+    var transitionLabel: String
+}
+
+/// Pure sleep/wake coordinator: stop before sleep; re-check trust + recreate once after wake.
+/// No automatic permission prompt on wake.
+struct SleepWakeLifecycleEngine: Equatable, Sendable {
+    private(set) var isAsleep: Bool = false
+    private(set) var wakeRecreateCount: Int = 0
+    /// Debounce: at most one recreate per wake edge until next sleep.
+    private(set) var pendingWakeRecreate: Bool = false
+
+    mutating func handle(_ phase: SleepWakePhase, accessibilityTrusted: Bool) -> SleepWakeDecision {
+        switch phase {
+        case .willSleep, .sessionResign:
+            isAsleep = true
+            pendingWakeRecreate = false
+            return SleepWakeDecision(
+                stopAndReset: true,
+                recreateOnce: false,
+                promptPermission: false,
+                transitionLabel: phase.rawValue
+            )
+        case .didWake, .sessionActive:
+            let wasAsleep = isAsleep
+            isAsleep = false
+            // Only recreate once per sleep→wake edge.
+            let shouldRecreate = wasAsleep && accessibilityTrusted && !pendingWakeRecreate
+            if shouldRecreate {
+                pendingWakeRecreate = true
+                wakeRecreateCount += 1
+            }
+            return SleepWakeDecision(
+                stopAndReset: false,
+                recreateOnce: shouldRecreate,
+                promptPermission: false,
+                transitionLabel: phase.rawValue
+            )
+        }
+    }
+
+    mutating func resetForTests() {
+        isAsleep = false
+        wakeRecreateCount = 0
+        pendingWakeRecreate = false
     }
 }

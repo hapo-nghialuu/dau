@@ -65,6 +65,9 @@
 		DAU00001000000000000098 /* toggle-hotkey-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000098 /* toggle-hotkey-tests.swift */; };
 		DAU00001000000000000099 /* toggle-hotkey-registrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000099 /* toggle-hotkey-registrar.swift */; };
 		DAU0000100000000000009A /* toggle-hotkey-registrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000099 /* toggle-hotkey-registrar.swift */; };
+		DAU000010000000000000A0 /* keyboard-event-tap.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000061 /* keyboard-event-tap.swift */; };
+		DAU000010000000000000A1 /* keyboard-event-tap-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU000020000000000000A1 /* keyboard-event-tap-tests.swift */; };
+		DAU000010000000000000A2 /* app-lifecycle-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU000020000000000000A2 /* app-lifecycle-tests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -122,6 +125,8 @@
 		DAU00002000000000000096 /* toggle-hotkey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "toggle-hotkey.swift"; sourceTree = "<group>"; };
 		DAU00002000000000000098 /* toggle-hotkey-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "toggle-hotkey-tests.swift"; sourceTree = "<group>"; };
 		DAU00002000000000000099 /* toggle-hotkey-registrar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "toggle-hotkey-registrar.swift"; sourceTree = "<group>"; };
+		DAU000020000000000000A1 /* keyboard-event-tap-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "keyboard-event-tap-tests.swift"; sourceTree = "<group>"; };
+		DAU000020000000000000A2 /* app-lifecycle-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "app-lifecycle-tests.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -221,6 +226,8 @@
 				DAU00002000000000000089 /* input-source-observer-tests.swift */,
 				DAU00002000000000000092 /* typing-session-tests.swift */,
 				DAU00002000000000000098 /* toggle-hotkey-tests.swift */,
+				DAU000020000000000000A1 /* keyboard-event-tap-tests.swift */,
+				DAU000020000000000000A2 /* app-lifecycle-tests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -437,6 +444,9 @@
 				DAU00001000000000000097 /* toggle-hotkey.swift in Sources */,
 				DAU0000100000000000009A /* toggle-hotkey-registrar.swift in Sources */,
 				DAU00001000000000000098 /* toggle-hotkey-tests.swift in Sources */,
+				DAU000010000000000000A0 /* keyboard-event-tap.swift in Sources */,
+				DAU000010000000000000A1 /* keyboard-event-tap-tests.swift in Sources */,
+				DAU000010000000000000A2 /* app-lifecycle-tests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -24,48 +24,79 @@ enum SyntheticEventMarker {
 // MARK: - Post-event access (dead-key preflight)
 
 /// Gate for synthetic keyboard posts. When false, TypingSession must not consume originals.
+///
+/// TG-00: hot path reads a **cached** capability snapshot only.
+/// `CGRequestPostEventAccess()` is allowed from setup/recovery UI via `refreshFromSystem(prompt:)`,
+/// never from the keyboard EventTap callback.
 enum SyntheticPostAccess {
-    /// Production: `CGPreflightPostEventAccess()` (+ one optional `CGRequestPostEventAccess`).
-    /// Overridable in unit tests.
-    static var check: () -> Bool = defaultCheck
+    /// Hot-path check. Default reads `cachedGranted` only — never prompts, never preflights OS.
+    /// Overridable in unit tests (including a blocking latch to prove EN bypass).
+    static var check: () -> Bool = { cachedGranted }
 
-    private static let requestLock = NSLock()
-    /// At most one OS request prompt per process lifetime.
+    private static let lock = NSLock()
+    /// Cached OS post-event capability. Refresh off the keyboard hot path.
+    private static var _cachedGranted = false
+    /// At most one OS request prompt per process lifetime (UI path only).
     private static var didRequestOnce = false
 
     static var isGranted: Bool { check() }
 
-    static func resetToDefault() {
-        check = defaultCheck
-        requestLock.lock()
-        didRequestOnce = false
-        requestLock.unlock()
+    /// Thread-safe snapshot used by default `check`.
+    static var cachedGranted: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _cachedGranted
     }
 
-    private static func defaultCheck() -> Bool {
+    /// Test / lifecycle hook to set the snapshot without touching OS APIs.
+    static func setCachedGranted(_ value: Bool) {
+        lock.lock()
+        _cachedGranted = value
+        lock.unlock()
+    }
+
+    /// Refresh cache from the OS.
+    /// - Parameter prompt: when true, may call `CGRequestPostEventAccess()` once (setup/recovery UI only).
+    static func refreshFromSystem(prompt: Bool = false) {
         if #available(macOS 10.15, *) {
             if CGPreflightPostEventAccess() {
-                return true
+                setCachedGranted(true)
+                return
             }
-            requestLock.lock()
-            let shouldRequest = !didRequestOnce
-            if shouldRequest {
-                didRequestOnce = true
-            }
-            requestLock.unlock()
-            if shouldRequest {
-                fputs("[dau] post-event access denied; requesting once\n", stderr)
-                _ = CGRequestPostEventAccess()
-                if CGPreflightPostEventAccess() {
-                    fputs("[dau] post-event access granted after request\n", stderr)
-                    return true
+            if prompt {
+                lock.lock()
+                let shouldRequest = !didRequestOnce
+                if shouldRequest {
+                    didRequestOnce = true
                 }
+                lock.unlock()
+                if shouldRequest {
+                    fputs("[dau] post-event access denied; requesting once (UI)\n", stderr)
+                    _ = CGRequestPostEventAccess()
+                }
+                let granted = CGPreflightPostEventAccess()
+                setCachedGranted(granted)
+                if granted {
+                    fputs("[dau] post-event access granted after request\n", stderr)
+                } else {
+                    fputs("[dau] post-event access denied after request\n", stderr)
+                }
+            } else {
+                setCachedGranted(false)
+                fputs("[dau] post-event access denied (cached, no prompt)\n", stderr)
             }
-            fputs("[dau] post-event access denied\n", stderr)
-            return false
+        } else {
+            // Pre-10.15: no separate post-access API; Accessibility trust is the practical gate.
+            setCachedGranted(true)
         }
-        // Pre-10.15: no separate post-access API; Accessibility trust is the practical gate.
-        return true
+    }
+
+    static func resetToDefault() {
+        lock.lock()
+        didRequestOnce = false
+        _cachedGranted = false
+        lock.unlock()
+        check = { cachedGranted }
     }
 }
 

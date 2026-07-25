@@ -440,4 +440,150 @@ final class TypingSessionTests: XCTestCase {
         XCTAssertTrue(completedBeforeReturn, "zero-delay inject must finish before EventTap gets decision")
         XCTAssertEqual(sink.commands, [.backspace, .unicodeChunk("â")])
     }
+
+    // MARK: - TG-00 fail-open / budget
+
+    /// EN path must not touch SyntheticPostAccess even when the checker blocks forever.
+    func testENBypassNeverCallsSyntheticPostAccess() {
+        session.setTypingEnabled(false)
+        var checkCount = 0
+        let latch = DispatchSemaphore(value: 0)
+        SyntheticPostAccess.check = {
+            checkCount += 1
+            latch.wait() // would hang the callback if EN path touched this
+            return false
+        }
+
+        // English "delete " — every key must pass without waiting on access check.
+        for ch in "delete" {
+            let d = session.handleKey(printable(ch))
+            XCTAssertFalse(d.consumeOriginal)
+            XCTAssertFalse(d.injectScheduled)
+            XCTAssertFalse(d.timedOut)
+        }
+        let space = session.handleKey(breakSpace())
+        XCTAssertFalse(space.consumeOriginal)
+        XCTAssertEqual(checkCount, 0, "EN must not call SyntheticPostAccess.check")
+        XCTAssertTrue(sink.commands.isEmpty)
+
+        // Release latch so any stray blocked check cannot hang process teardown.
+        latch.signal()
+        SyntheticPostAccess.check = { true }
+    }
+
+    /// Session/inject work held by latch: callback returns within budget; no late inject after release.
+    func testCallbackBudgetTimeoutSkipsLateInject() {
+        let budgetNs: UInt64 = 30_000_000 // 30ms test budget
+        session = TypingSession(
+            pipeline: pipeline,
+            injector: injector,
+            callbackBudgetNanoseconds: budgetNs
+        )
+        session.applyRuntimeSettings(
+            typingEnabled: true,
+            injectionMethod: .backspaceFast,
+            delays: .zero,
+            engineMethod: DauMethod_Telex
+        )
+        // Seed provisional so next key can take transform inject path.
+        _ = session.handleKey(printable("a"))
+        sink.reset()
+
+        let latch = DispatchSemaphore(value: 0)
+        var injectStarted = false
+        session.testBeforeZeroDelayInject = {
+            injectStarted = true
+            latch.wait()
+        }
+
+        var injectCompletions = 0
+        session.onInjectCompleted = { _ in
+            injectCompletions += 1
+        }
+
+        let start = DispatchTime.now().uptimeNanoseconds
+        let d = session.handleKey(printable("a")) // a→â would inject
+        let elapsed = DispatchTime.now().uptimeNanoseconds &- start
+
+        XCTAssertTrue(d.timedOut, "must fail-open when work exceeds budget")
+        XCTAssertFalse(d.consumeOriginal, "must pass original on timeout")
+        XCTAssertFalse(d.injectScheduled)
+        XCTAssertLessThan(
+            elapsed,
+            budgetNs + 200_000_000,
+            "callback must return near budget (got \(elapsed)ns)"
+        )
+        XCTAssertTrue(sink.commands.isEmpty, "no inject posts before/during timeout")
+
+        // Release latch: generation quarantined → no late inject posts.
+        latch.signal()
+        // Drain session queue.
+        _ = session.provisionalLength
+        // Give async completion path a beat if any.
+        let drain = expectation(description: "drain")
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { drain.fulfill() }
+        wait(for: [drain], timeout: 1.0)
+
+        XCTAssertTrue(sink.commands.isEmpty, "no late inject after latch release")
+        XCTAssertEqual(injectCompletions, 0, "quarantined generation must not report inject")
+        // Compose must not keep stale mutation after timeout.
+        XCTAssertEqual(session.provisionalLength, 0)
+        // Next key starts clean (plain append).
+        sink.reset()
+        let next = session.handleKey(printable("b"))
+        XCTAssertFalse(next.timedOut)
+        XCTAssertFalse(next.consumeOriginal)
+        XCTAssertEqual(session.provisionalLength, 1)
+        XCTAssertTrue(sink.commands.isEmpty)
+        _ = injectStarted // may or may not have reached inject before quarantine
+        session.onInjectCompleted = nil
+        session.testBeforeZeroDelayInject = nil
+    }
+
+    /// Queue held before map: callback still returns; after release no stale core mutation.
+    func testQueueLatchBeforeMapFailsOpenWithoutStaleMutation() {
+        let budgetNs: UInt64 = 25_000_000
+        session = TypingSession(
+            pipeline: pipeline,
+            injector: injector,
+            callbackBudgetNanoseconds: budgetNs
+        )
+        session.applyRuntimeSettings(
+            typingEnabled: true,
+            injectionMethod: .backspaceFast,
+            delays: .zero,
+            engineMethod: DauMethod_Telex
+        )
+
+        let latch = DispatchSemaphore(value: 0)
+        session.testQueueWorkBegan = {
+            latch.wait()
+        }
+
+        let d = session.handleKey(printable("x"))
+        XCTAssertTrue(d.timedOut)
+        XCTAssertFalse(d.consumeOriginal)
+
+        latch.signal()
+        _ = session.provisionalLength
+        let drain = expectation(description: "drain-map")
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.05) { drain.fulfill() }
+        wait(for: [drain], timeout: 1.0)
+
+        XCTAssertEqual(session.provisionalLength, 0, "late map must not keep stale compose")
+        session.testQueueWorkBegan = nil
+    }
+
+    /// Boundary/shortcut path returns pass without SyntheticPostAccess.
+    func testBoundaryEarlyPassSkipsPostAccess() {
+        var checkCount = 0
+        SyntheticPostAccess.check = {
+            checkCount += 1
+            return true
+        }
+        session.setTypingEnabled(true)
+        let d = session.handleKey(otherKey(keyCode: 9)) // Cmd+V-like boundary
+        XCTAssertFalse(d.consumeOriginal)
+        XCTAssertEqual(checkCount, 0)
+    }
 }

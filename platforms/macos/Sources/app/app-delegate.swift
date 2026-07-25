@@ -1,14 +1,17 @@
-// Dấu macOS — startup/shutdown orchestration + TypingSession wiring (WP-06 / P0-2).
-// CRITICAL: EventTap callback must NEVER call TextInjector.inject or usleep.
-// Hot path: typingSession.handleKey → queue.sync map → queue.async inject.
+// Dấu macOS — startup/shutdown orchestration + TypingSession wiring (WP-06 / P0-2 / TG-00).
+// CRITICAL: EventTap callback must NEVER call permission prompts, unbounded AX, or hang on inject.
+// Hot path: early EN/boundary fail-open → TypingSession.handleKey (bounded budget) → optional inject.
 
 import AppKit
 import Foundation
 
-/// Application delegate: wires EventTap → profile cache → TypingSession (async inject).
+/// Application delegate: wires EventTap → profile cache → TypingSession (bounded callback).
 ///
-/// P0-2 contract: no bare `MacKeyPipeline` / `TextInjector` owned here. All key
-/// processing goes through `TypingSession` so delays cannot run on the tap thread.
+/// TG-00 contract:
+/// - EN / blocked / off path never waits on `dau.typing` or SyntheticPostAccess.
+/// - Sleep/wake stops and recreates the tap; no permission prompt on wake.
+/// - AX poll stops when trusted + tap healthy.
+/// - `state.eventTapRunning` always mirrors real tap status.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let state = AppState()
 
@@ -41,11 +44,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     private var axPollTimer: Timer?
+    /// Workspace sleep/wake / session observers.
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var sleepWakeEngine = SleepWakeLifecycleEngine()
 
     // MARK: - NSApplicationDelegate
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+
+        // Capability snapshot for inject path — no prompt on launch.
+        SyntheticPostAccess.refreshFromSystem(prompt: false)
 
         typingSession.onInjectCompleted = { result in
             if case .failure = result {
@@ -53,14 +62,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 fputs("[dau] inject failed; compose cleared\n", stderr)
             }
         }
+        typingSession.onCallbackTelemetry = { line in
+            // Metadata only (phase/gen/bucket). Never key codes or text.
+            fputs("[dau] \(line)\n", stderr)
+        }
 
         applyEngineFlags()
         refreshProfileCache()
 
+        // Tap reset must not block; clear compose on session queue asynchronously.
         eventTap.onTapReset = { [weak self] in
-            self?.typingSession.resetCompose()
+            self?.typingSession.resetComposeAsync()
+            DispatchQueue.main.async {
+                self?.syncEventTapStateToUI()
+            }
         }
-        // P0-2: only TypingSession.handleKey on the tap callback — never inject here.
+        eventTap.healthCheck = { [weak self] in
+            guard let self else { return false }
+            // Cached capability + AX trust only — never prompt from recovery.
+            let ax = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
+            let post = SyntheticPostAccess.cachedGranted
+            return ax && post
+        }
+        eventTap.onTelemetry = { line in
+            fputs("[dau] \(line)\n", stderr)
+        }
+
+        // P0-2 / TG-00: early fail-open lives in TypingSession; AppDelegate never injects here.
         // Global VI/EN toggle is Carbon RegisterEventHotKey (ToggleHotkeyRegistrar), not EventTap.
         eventTap.keyHandler = { [weak self] key, _, _ in
             guard let self else { return .pass }
@@ -75,6 +103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         focusObserver.onFocusChange = { [weak self] _, _ in
             self?.typingSession.resetCompose()
+            // Refresh post-access cache off the keyboard hot path when focus changes.
+            SyntheticPostAccess.refreshFromSystem(prompt: false)
             self?.refreshProfileCache()
             self?.syncUI()
         }
@@ -103,6 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wireSettings()
         menuBar.start()
 
+        registerSleepWakeObservers()
         startAXPolling()
         attemptStartTap(prompt: false)
 
@@ -112,19 +143,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onboarding.show()
         }
 
-        fputs("[dau] app launched \(state.versionLabel) (TypingSession hot path)\n", stderr)
+        fputs("[dau] app launched \(state.versionLabel) (TypingSession hot path, TG-00 fail-open)\n", stderr)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         axPollTimer?.invalidate()
+        axPollTimer = nil
+        unregisterSleepWakeObservers()
         toggleHotkeyRegistrar.unregister()
-        eventTap.stop()
+        eventTap.stopClean()
         focusObserver.stop()
         inputSourceObserver.stop()
         menuBar.stop()
         onboarding.close()
         settings.close()
         typingSession.resetCompose()
+        syncEventTapStateToUI()
     }
 
     // MARK: - Profile / engine → TypingSession
@@ -175,20 +209,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if prompt {
             _ = KeyboardEventTap.isAccessibilityTrusted(prompt: true)
             state.accessibilityTrusted = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
+            // Post-event access prompt only from setup/recovery UI — never keyboard callback.
+            SyntheticPostAccess.refreshFromSystem(prompt: true)
+        } else {
+            SyntheticPostAccess.refreshFromSystem(prompt: false)
         }
 
         if state.accessibilityTrusted {
             let ok = eventTap.start(promptForAccessibility: false)
-            state.eventTapRunning = ok
+            syncEventTapStateToUI(fallbackDetail: ok ? nil : "event tap create failed")
             if !ok {
-                state.statusDetail = "event tap create failed"
-            } else if case .running(let place) = eventTap.status {
-                state.statusDetail = "tap \(place.rawValue)"
+                // Real status already mirrored; keep polling so recovery can retry.
+                startAXPolling()
+            } else {
+                // Healthy start: AX poll can stop (restarted if trust/tap drops).
+                stopAXPollingIfHealthy()
             }
         } else {
-            eventTap.stop()
-            state.eventTapRunning = false
-            state.statusDetail = "need Accessibility"
+            eventTap.stopClean()
+            syncEventTapStateToUI(fallbackDetail: "need Accessibility")
+            startAXPolling()
         }
         syncUI()
         onboarding.refreshStatus()
@@ -197,21 +237,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func restartTap() {
         typingSession.resetCompose()
         state.accessibilityTrusted = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
+        SyntheticPostAccess.refreshFromSystem(prompt: false)
         if state.accessibilityTrusted {
             let ok = eventTap.restart(promptForAccessibility: false)
-            state.eventTapRunning = ok
+            syncEventTapStateToUI(fallbackDetail: ok ? nil : "event tap restart failed")
+            if ok {
+                stopAXPollingIfHealthy()
+            } else {
+                startAXPolling()
+            }
         } else {
-            eventTap.stop()
-            state.eventTapRunning = false
+            eventTap.stopClean()
+            syncEventTapStateToUI(fallbackDetail: "need Accessibility")
+            startAXPolling()
         }
         refreshProfileCache()
         syncUI()
         onboarding.refreshStatus()
     }
 
+    /// Mirror real tap status into AppState (including degraded / failed restart).
+    private func syncEventTapStateToUI(fallbackDetail: String? = nil) {
+        let running = eventTap.isRunning
+        let degraded = eventTap.isDegraded || {
+            if case .degradedStopped = eventTap.status { return true }
+            return false
+        }()
+        var detail = fallbackDetail
+        if detail == nil {
+            switch eventTap.status {
+            case .running(let place):
+                detail = "tap \(place.rawValue) gen=\(eventTap.generation)"
+            case .degradedStopped:
+                detail = "tap degraded (fail-open)"
+            case .createFailed:
+                detail = "event tap create failed"
+            case .accessibilityDenied:
+                detail = "need Accessibility"
+            case .stopped:
+                detail = state.accessibilityTrusted ? "tap stopped" : "need Accessibility"
+            }
+        }
+        state.applyEventTapMirror(
+            running: running,
+            degraded: degraded,
+            generation: eventTap.generation,
+            detail: detail
+        )
+    }
+
     private func startAXPolling() {
-        axPollTimer?.invalidate()
-        // Poll while untrusted so granting permission in System Settings is noticed.
+        guard axPollTimer == nil else { return }
+        // Bounded cadence while untrusted / unhealthy only.
         let timer = Timer(timeInterval: 1.5, repeats: true) { [weak self] _ in
             self?.pollAccessibility()
         }
@@ -219,26 +296,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         axPollTimer = timer
     }
 
+    private func stopAXPolling() {
+        axPollTimer?.invalidate()
+        axPollTimer = nil
+    }
+
+    private func stopAXPollingIfHealthy() {
+        if state.accessibilityTrusted && state.eventTapRunning && !state.eventTapDegraded {
+            stopAXPolling()
+        }
+    }
+
     private func pollAccessibility() {
         let trusted = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
+        let decision = AccessibilityPollEngine.evaluate(
+            trusted: trusted,
+            wasTrusted: state.accessibilityTrusted,
+            tapRunning: state.eventTapRunning,
+            tapDegraded: state.eventTapDegraded
+        )
+
         if trusted != state.accessibilityTrusted {
             state.accessibilityTrusted = trusted
-            if trusted {
-                // Start listener; onboarding only completes when tap is running.
-                attemptStartTap(prompt: false)
-            } else {
-                eventTap.stop()
-                state.eventTapRunning = false
-                typingSession.resetCompose()
-                syncUI()
-                onboarding.refreshStatus()
-            }
-        } else if trusted, !state.eventTapRunning {
-            // Permission ok but listener not running — recover without prompt spam.
+        }
+
+        if decision.stopTap {
+            eventTap.stopClean()
+            typingSession.resetComposeAsync()
+            SyntheticPostAccess.refreshFromSystem(prompt: false)
+            syncEventTapStateToUI()
+        }
+        if decision.attemptStartTap {
             attemptStartTap(prompt: false)
-        } else if trusted, state.eventTapRunning {
-            // Keep ready phase in sync while window still open (auto-close is onboarding-owned).
+        }
+        if decision.refreshUI {
+            syncUI()
             onboarding.refreshStatus()
+        }
+        if decision.stopPolling {
+            stopAXPolling()
+            return
         }
     }
 
@@ -252,6 +349,88 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let url = URL(string: s), NSWorkspace.shared.open(url) {
                 return
             }
+        }
+    }
+
+    // MARK: - Sleep / wake / session
+
+    private func registerSleepWakeObservers() {
+        let nc = NSWorkspace.shared.notificationCenter
+        let pairs: [(NSNotification.Name, SleepWakePhase)] = [
+            (NSWorkspace.willSleepNotification, .willSleep),
+            (NSWorkspace.didWakeNotification, .didWake),
+            (NSWorkspace.sessionDidResignActiveNotification, .sessionResign),
+            (NSWorkspace.sessionDidBecomeActiveNotification, .sessionActive),
+        ]
+        for (name, phase) in pairs {
+            let token = nc.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.handleSleepWake(phase)
+            }
+            workspaceObservers.append(token)
+        }
+    }
+
+    private func unregisterSleepWakeObservers() {
+        let nc = NSWorkspace.shared.notificationCenter
+        for token in workspaceObservers {
+            nc.removeObserver(token)
+        }
+        workspaceObservers.removeAll()
+    }
+
+    /// Workspace sleep/wake/session edge (also usable from tests via same engine).
+    func handleSleepWake(_ phase: SleepWakePhase) {
+        // Trust re-check without prompt on every edge.
+        let trusted = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
+        state.accessibilityTrusted = trusted
+        SyntheticPostAccess.refreshFromSystem(prompt: false)
+
+        let decision = sleepWakeEngine.handle(phase, accessibilityTrusted: trusted)
+        state.lastLifecycleTransition = decision.transitionLabel
+        // Metadata only: phase + bundle id. Never key codes / text / clipboard.
+        let bundle = Bundle.main.bundleIdentifier ?? "unknown"
+        fputs(
+            "[dau] lifecycle phase=\(decision.transitionLabel) trusted=\(trusted) " +
+                "recreate=\(decision.recreateOnce) prompt=\(decision.promptPermission) bundle=\(bundle)\n",
+            stderr
+        )
+
+        if decision.stopAndReset {
+            typingSession.resetComposeAsync()
+            eventTap.stopClean()
+            syncEventTapStateToUI(fallbackDetail: "tap stopped (\(decision.transitionLabel))")
+            // Resume AX polling after sleep so wake recovery can notice trust changes.
+            startAXPolling()
+            syncUI()
+            return
+        }
+
+        // Wake / session-active: never prompt for permission automatically.
+        assert(!decision.promptPermission, "wake path must not prompt")
+        if decision.recreateOnce {
+            if trusted {
+                let ok = eventTap.start(promptForAccessibility: false)
+                syncEventTapStateToUI(
+                    fallbackDetail: ok ? nil : "event tap recreate failed after wake"
+                )
+                if ok {
+                    stopAXPollingIfHealthy()
+                } else {
+                    startAXPolling()
+                }
+            } else {
+                eventTap.stopClean()
+                syncEventTapStateToUI(fallbackDetail: "need Accessibility")
+                startAXPolling()
+            }
+            typingSession.resetComposeAsync()
+            refreshProfileCache()
+            syncUI()
+            onboarding.refreshStatus()
         }
     }
 
@@ -292,6 +471,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.openAccessibilitySettings()
         }
         onboarding.onRequestAccessibilityPrompt = { [weak self] in
+            // Setup UI may prompt for Accessibility + post-event access.
             self?.attemptStartTap(prompt: true)
         }
         onboarding.onRetryTap = { [weak self] in
