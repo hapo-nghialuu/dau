@@ -1,6 +1,7 @@
-// Dấu macOS — TextInjector: replacement sequencing (WP-03).
+// Dấu macOS — TextInjector: replacement sequencing (WP-03 / TG-05).
 // Posts Backspace + Unicode via a pluggable EventSink; never logs text content.
 // Dead-key guard: sink reports post failures; session must fail-open (not consume) when inject cannot run.
+// Declared-only methods fall back explicitly to an implemented path (no silent stubs).
 
 import CoreGraphics
 import Foundation
@@ -107,7 +108,7 @@ enum InjectorCommand: Equatable, Sendable {
     case backspace
     case unicodeChunk(String)
     case wait(microseconds: UInt32)
-    /// Shift+Left once (selection method; stub path may still emit for structure).
+    /// Shift+Left once (legacy stub plan structure; delivery falls back before execute).
     case shiftLeft
     /// Narrow no-break space used to poke autocomplete (U+202F).
     case emptyPrefix
@@ -141,33 +142,114 @@ final class RecordingEventSink: InjectorEventSink {
     private(set) var commands: [InjectorCommand] = []
     /// When false, posts still record but report failure (dead-key regression tests).
     var shouldSucceed: Bool = true
+    /// Fail only the Nth post (1-based). `nil` = use `shouldSucceed` for every post.
+    /// Used to prove mid-batch failure does not report false success (TG-05).
+    var failAtCommandIndex: Int?
+
+    private var postIndex = 0
 
     func reset() {
         commands.removeAll(keepingCapacity: true)
+        postIndex = 0
+    }
+
+    private func recordAndResult(_ command: InjectorCommand) -> Bool {
+        commands.append(command)
+        postIndex += 1
+        if let failAt = failAtCommandIndex, postIndex == failAt {
+            return false
+        }
+        return shouldSucceed
     }
 
     @discardableResult
     func postBackspace() -> Bool {
-        commands.append(.backspace)
-        return shouldSucceed
+        recordAndResult(.backspace)
     }
 
     @discardableResult
     func postUnicode(_ text: String) -> Bool {
-        commands.append(.unicodeChunk(text))
-        return shouldSucceed
+        recordAndResult(.unicodeChunk(text))
     }
 
     @discardableResult
     func postShiftLeft() -> Bool {
-        commands.append(.shiftLeft)
-        return shouldSucceed
+        recordAndResult(.shiftLeft)
     }
 
     @discardableResult
     func postEmptyPrefix() -> Bool {
-        commands.append(.emptyPrefix)
+        recordAndResult(.emptyPrefix)
+    }
+}
+
+/// In-memory target document for delivery tests (TG-05).
+/// Models what a focused text field would contain after physical keys + synthetic inject.
+final class FakeTargetDocument: InjectorEventSink {
+    private(set) var content: String = ""
+    /// When false, the next sink post fails (and is not applied).
+    var shouldSucceed: Bool = true
+    /// Fail only the Nth post (1-based). `nil` = use `shouldSucceed`.
+    var failAtCommandIndex: Int?
+    private var postIndex = 0
+
+    func reset() {
+        content = ""
+        postIndex = 0
+        shouldSucceed = true
+        failAtCommandIndex = nil
+    }
+
+    /// Seed document content for unit tests (not used by production inject path).
+    func seed(_ text: String) {
+        content = text
+        postIndex = 0
+    }
+
+    /// Apply a physical key that the EventTap passed through (not consumed).
+    func applyPhysicalKey(_ text: String) {
+        content.append(text)
+    }
+
+    /// Apply a physical Backspace that the EventTap passed through.
+    func applyPhysicalBackspace() {
+        guard !content.isEmpty else { return }
+        content = String(content.unicodeScalars.dropLast())
+    }
+
+    private func beginPost() -> Bool {
+        postIndex += 1
+        if let failAt = failAtCommandIndex, postIndex == failAt {
+            return false
+        }
         return shouldSucceed
+    }
+
+    @discardableResult
+    func postBackspace() -> Bool {
+        guard beginPost() else { return false }
+        applyPhysicalBackspace()
+        return true
+    }
+
+    @discardableResult
+    func postUnicode(_ text: String) -> Bool {
+        guard beginPost() else { return false }
+        content.append(text)
+        return true
+    }
+
+    @discardableResult
+    func postShiftLeft() -> Bool {
+        // Selection stub is not a real delivery path; treat as no-op success for harness safety.
+        beginPost()
+    }
+
+    @discardableResult
+    func postEmptyPrefix() -> Bool {
+        guard beginPost() else { return false }
+        content.append("\u{202F}")
+        return true
     }
 }
 
@@ -287,7 +369,7 @@ final class RecordingInjectorSleeper: InjectorSleeper {
 // MARK: - TextInjector
 
 /// Executes replacement: N backspaces then text, ordered and serialized.
-/// Logs only method / lengths / delays — never raw key or text content.
+/// Logs only method / lengths / delays / batch metadata — never raw key or text content.
 final class TextInjector {
     private let sink: InjectorEventSink
     private let sleeper: InjectorSleeper
@@ -308,6 +390,7 @@ final class TextInjector {
     }
 
     /// Build the ordered command plan without side effects (unit-test entry point).
+    /// Always plans the **delivery** method (stubs rewritten to implemented path).
     func plan(
         backspace: Int,
         text: String,
@@ -315,8 +398,9 @@ final class TextInjector {
         delays: DelayPreset
     ) -> [InjectorCommand] {
         guard backspace >= 0 else { return [] }
+        let delivery = method.deliveryImplementation
 
-        switch method {
+        switch delivery {
         case .passthrough:
             return []
 
@@ -326,34 +410,26 @@ final class TextInjector {
         case .charByChar:
             return planBackspaceThenText(backspace: backspace, text: text, delays: delays, charByChar: true)
 
-        case .selection:
-            // TODO(P3.1): full selection path for address bar / combobox / Excel-like.
-            // Structured stub: Shift+Left × N then Unicode (or Backspace if text empty).
-            return planSelectionStub(backspace: backspace, text: text, delays: delays)
-
-        case .emptyCharPrefix:
-            // TODO(P3.3): role-aware autocomplete break; structured stub plan only.
-            return planEmptyCharPrefixStub(backspace: backspace, text: text, delays: delays)
-
-        case .syncProxy:
-            // TODO(P3.4): requires CGEventTapProxy from the tap callback.
-            // Structured stub: same ordering as backspaceFast for plan inspection.
+        case .axDirect:
+            // Plan inspects the synthetic fallback path (AX is attempted only at inject time).
             return planBackspaceThenText(backspace: backspace, text: text, delays: delays, charByChar: false)
 
-        case .axDirect:
-            // TODO(P3.5): AX value/range write; plan falls back to synthetic BS+text.
+        case .selection, .emptyCharPrefix, .syncProxy:
+            // Unreachable: deliveryImplementation rewrites these to backspaceFast.
             return planBackspaceThenText(backspace: backspace, text: text, delays: delays, charByChar: false)
         }
     }
 
     /// Inject replacement. Safe for concurrent callers (serialized). Never logs `text`.
     /// Returns `.failure` when post access is denied or a sink post cannot create events.
+    /// Mid-batch sink failure aborts remaining commands and returns `.failure` (no false success).
     @discardableResult
     func inject(
         backspace: Int,
         text: String,
         method: InjectionMethod,
-        delays: DelayPreset
+        delays: DelayPreset,
+        context: InjectionDeliveryContext = InjectionDeliveryContext()
     ) -> Result<Void, InjectionError> {
         guard backspace >= 0 else {
             return .failure(.invalidBackspaceCount)
@@ -362,19 +438,30 @@ final class TextInjector {
         lock.lock()
         defer { lock.unlock() }
 
+        let requested = context.requestedMethod ?? method
+        let delivery = method.deliveryImplementation
+        if delivery != method || (context.requestedMethod.map { $0 != delivery } ?? false) {
+            let line =
+                "[dau] inject method fallback: \(context.metadataFragment) " +
+                "requested=\(requested.rawValue) delivered=\(delivery.rawValue)\n"
+            fputs(line, stderr)
+            onMetadata?(line.trimmingCharacters(in: .newlines))
+        }
+
         let textLen = text.unicodeScalars.count
-        // Metadata only: method + counts + delay numbers. No text content.
+        // Metadata only: method + counts + delays + batch context. No text content.
         let meta =
-            "method=\(method.rawValue) bs=\(backspace) textLen=\(textLen) " +
-            "delays=(\(delays.backspaceUs),\(delays.settleUs),\(delays.textUs))"
+            "method=\(delivery.rawValue) bs=\(backspace) textLen=\(textLen) " +
+            "delays=(\(delays.backspaceUs),\(delays.settleUs),\(delays.textUs)) " +
+            context.metadataFragment
         onMetadata?("inject \(meta)")
 
-        if method == .passthrough {
+        if delivery == .passthrough {
             logInjectResult(meta: meta, ok: true, detail: "passthrough")
             return .success(())
         }
 
-        if method == .axDirect {
+        if delivery == .axDirect {
             // Attempt AX path; fall back to synthetic on any failure (no crash).
             let axResult = axAccessor.replaceFocusedText(
                 deleteScalarCount: backspace,
@@ -382,28 +469,23 @@ final class TextInjector {
             )
             switch axResult {
             case .success:
-                onMetadata?("inject axDirect=ok textLen=\(textLen)")
+                onMetadata?("inject axDirect=ok textLen=\(textLen) \(context.metadataFragment)")
                 logInjectResult(meta: meta, ok: true, detail: "axDirect")
                 return .success(())
             case .failure(let err):
-                onMetadata?("inject axDirect=fallback error=\(err)")
+                onMetadata?("inject axDirect=fallback error=\(err) \(context.metadataFragment)")
                 // Fall through to synthetic plan.
             }
         }
 
-        if method == .syncProxy {
-            // TODO(P3.4): wire proxy from KeyboardEventTap; for now synthetic HID path.
-            onMetadata?("inject syncProxy=stub_fallback")
-        }
-
         // Preflight before any destructive sequence (BS + text). Avoid partial wipe.
         guard SyntheticPostAccess.isGranted else {
-            onMetadata?("inject postAccess=denied")
+            onMetadata?("inject postAccess=denied \(context.metadataFragment)")
             logInjectResult(meta: meta, ok: false, detail: "postAccessDenied")
             return .failure(.postAccessDenied)
         }
 
-        let commands = plan(backspace: backspace, text: text, method: method, delays: delays)
+        let commands = plan(backspace: backspace, text: text, method: delivery, delays: delays)
         let result = execute(commands)
         switch result {
         case .success:
@@ -469,47 +551,10 @@ final class TextInjector {
         return cmds
     }
 
-    private func planSelectionStub(backspace: Int, text: String, delays: DelayPreset) -> [InjectorCommand] {
-        var cmds: [InjectorCommand] = []
-        if text.isEmpty {
-            // Plan: real Backspace when replacement is empty.
-            return planBackspaceThenText(backspace: backspace, text: "", delays: delays, charByChar: false)
-        }
-        for i in 0..<backspace {
-            cmds.append(.shiftLeft)
-            if delays.backspaceUs > 0, i < backspace - 1 {
-                cmds.append(.wait(microseconds: delays.backspaceUs))
-            }
-        }
-        if delays.settleUs > 0, backspace > 0 {
-            cmds.append(.wait(microseconds: delays.settleUs))
-        }
-        cmds.append(.unicodeChunk(text))
-        if delays.textUs > 0 {
-            cmds.append(.wait(microseconds: delays.textUs))
-        }
-        return cmds
-    }
-
-    private func planEmptyCharPrefixStub(backspace: Int, text: String, delays: DelayPreset) -> [InjectorCommand] {
-        var cmds: [InjectorCommand] = []
-        cmds.append(.emptyPrefix)
-        if delays.backspaceUs > 0 {
-            cmds.append(.wait(microseconds: delays.backspaceUs))
-        }
-        // Extra delete for the prefix + provisional length.
-        let totalDelete = backspace + 1
-        cmds.append(contentsOf: planBackspaceThenText(
-            backspace: totalDelete,
-            text: text,
-            delays: delays,
-            charByChar: false
-        ))
-        return cmds
-    }
-
     // MARK: Execution
 
+    /// Execute commands in order. **First sink failure aborts** remaining steps and returns failure.
+    /// Never reports success after a failed command (TG-05).
     private func execute(_ commands: [InjectorCommand]) -> Result<Void, InjectionError> {
         for command in commands {
             let ok: Bool

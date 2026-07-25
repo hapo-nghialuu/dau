@@ -1,5 +1,5 @@
-// Dấu macOS — TextInjector unit tests (WP-03).
-// Uses RecordingEventSink / RecordingInjectorSleeper; no real CGEvent posts.
+// Dấu macOS — TextInjector unit tests (WP-03 / TG-05).
+// Uses RecordingEventSink / RecordingInjectorSleeper / FakeTargetDocument; no real CGEvent posts.
 
 import XCTest
 
@@ -186,21 +186,18 @@ final class TextInjectorTests: XCTestCase {
         XCTAssertTrue(sink.commands.isEmpty)
     }
 
-    // MARK: - Stubs do not crash
+    // MARK: - Stub methods fall back explicitly (TG-05)
 
-    func testSelectionStubDoesNotCrash() {
-        let result = injector.inject(
-            backspace: 2,
-            text: "hi",
-            method: .selection,
-            delays: .zero
-        )
+    func testSelectionFallsBackToBackspaceFastPlan() {
+        let plan = injector.plan(backspace: 2, text: "hi", method: .selection, delays: .zero)
+        XCTAssertEqual(plan, [.backspace, .backspace, .unicodeChunk("hi")])
+        let result = injector.inject(backspace: 2, text: "hi", method: .selection, delays: .zero)
         assertSuccess(result)
-        XCTAssertEqual(sink.commands.first, .shiftLeft)
-        XCTAssertEqual(sink.commands.last, .unicodeChunk("hi"))
+        XCTAssertEqual(sink.commands, [.backspace, .backspace, .unicodeChunk("hi")])
+        XCTAssertFalse(sink.commands.contains(.shiftLeft), "must not use silent selection stub")
     }
 
-    func testEmptyCharPrefixStubDoesNotCrash() {
+    func testEmptyCharPrefixFallsBackToBackspaceFast() {
         let result = injector.inject(
             backspace: 1,
             text: "a",
@@ -208,12 +205,11 @@ final class TextInjectorTests: XCTestCase {
             delays: .zero
         )
         assertSuccess(result)
-        XCTAssertEqual(sink.commands.first, .emptyPrefix)
-        XCTAssertTrue(sink.commands.contains(.backspace))
-        XCTAssertTrue(sink.commands.contains(.unicodeChunk("a")))
+        XCTAssertEqual(sink.commands, [.backspace, .unicodeChunk("a")])
+        XCTAssertFalse(sink.commands.contains(.emptyPrefix), "must not use silent emptyPrefix stub")
     }
 
-    func testSyncProxyStubFallsBackToSynthetic() {
+    func testSyncProxyFallsBackToBackspaceFast() {
         let result = injector.inject(
             backspace: 1,
             text: "b",
@@ -236,6 +232,58 @@ final class TextInjectorTests: XCTestCase {
         XCTAssertEqual(sink.commands, [.backspace, .unicodeChunk("c")])
     }
 
+    // MARK: - Per-command failure (TG-05)
+
+    func testMidBatchBackspaceFailureDoesNotReportSuccess() {
+        // Plan: BS, BS, unicode — fail on 2nd BS.
+        sink.failAtCommandIndex = 2
+        let result = injector.inject(
+            backspace: 2,
+            text: "x",
+            method: .backspaceFast,
+            delays: .zero
+        )
+        switch result {
+        case .success:
+            XCTFail("must not report success after mid-batch failure")
+        case .failure(let err):
+            if case .sinkFailed = err {
+                // ok
+            } else {
+                XCTFail("expected sinkFailed, got \(err)")
+            }
+        }
+        XCTAssertEqual(sink.commands, [.backspace, .backspace], "must stop after failed command")
+    }
+
+    func testTextChunkFailureDoesNotReportSuccess() {
+        sink.failAtCommandIndex = 2 // BS then fail on unicode
+        let result = injector.inject(
+            backspace: 1,
+            text: "z",
+            method: .backspaceFast,
+            delays: .zero
+        )
+        if case .success = result {
+            XCTFail("must not report success when text post fails")
+        }
+        XCTAssertEqual(sink.commands.count, 2)
+    }
+
+    func testFirstCommandFailureLeavesNoFurtherPosts() {
+        sink.failAtCommandIndex = 1
+        let result = injector.inject(
+            backspace: 3,
+            text: "abc",
+            method: .backspaceFast,
+            delays: .zero
+        )
+        if case .success = result {
+            XCTFail("expected failure")
+        }
+        XCTAssertEqual(sink.commands, [.backspace])
+    }
+
     // MARK: - Metadata logging never includes text
 
     func testMetadataCallbackDoesNotContainTextContent() {
@@ -246,7 +294,13 @@ final class TextInjectorTests: XCTestCase {
             backspace: 1,
             text: secret,
             method: .backspaceFast,
-            delays: .zero
+            delays: .zero,
+            context: InjectionDeliveryContext(
+                batchId: 42,
+                bundleId: "com.example.App",
+                mode: .sync,
+                requestedMethod: .backspaceFast
+            )
         )
         XCTAssertFalse(logs.isEmpty)
         for line in logs {
@@ -254,6 +308,10 @@ final class TextInjectorTests: XCTestCase {
             XCTAssertTrue(line.contains("textLen="))
             XCTAssertTrue(line.contains("method="))
         }
+        let joined = logs.joined(separator: "\n")
+        XCTAssertTrue(joined.contains("batch=42"))
+        XCTAssertTrue(joined.contains("bundle=com.example.App"))
+        XCTAssertTrue(joined.contains("mode=sync"))
     }
 
     // MARK: - Marker
@@ -269,7 +327,13 @@ final class TextInjectorTests: XCTestCase {
         XCTAssertEqual(InjectionMethod.backspaceSlow.defaultDelays, .slow)
         XCTAssertEqual(InjectionMethod.passthrough.defaultDelays, .zero)
         XCTAssertTrue(InjectionMethod.backspaceFast.isMVPImplemented)
+        XCTAssertTrue(InjectionMethod.axDirect.isMVPImplemented)
         XCTAssertFalse(InjectionMethod.selection.isMVPImplemented)
+        XCTAssertFalse(InjectionMethod.emptyCharPrefix.isMVPImplemented)
+        XCTAssertFalse(InjectionMethod.syncProxy.isMVPImplemented)
+        XCTAssertEqual(InjectionMethod.selection.deliveryImplementation, .backspaceFast)
+        XCTAssertEqual(InjectionMethod.syncProxy.deliveryImplementation, .backspaceFast)
+        XCTAssertEqual(InjectionMethod.backspaceSlow.deliveryImplementation, .backspaceSlow)
     }
 
     // MARK: - AX timeout helpers
@@ -325,5 +389,29 @@ final class TextInjectorTests: XCTestCase {
             }
         }
         XCTAssertEqual(sink.commands, [.unicodeChunk("a")])
+    }
+
+    // MARK: - Fake target document (injector-level)
+
+    func testFakeDocumentAppliesBackspaceThenText() {
+        let doc = FakeTargetDocument()
+        doc.seed("ab")
+        let inj = TextInjector(sink: doc, sleeper: sleeper, axAccessor: AXTextAccessor())
+        let result = inj.inject(backspace: 1, text: "X", method: .backspaceFast, delays: .zero)
+        assertSuccess(result)
+        XCTAssertEqual(doc.content, "aX")
+    }
+
+    func testFakeDocumentMidBatchFailureStopsMutation() {
+        let doc = FakeTargetDocument()
+        doc.seed("hello")
+        doc.failAtCommandIndex = 2 // first BS ok, second BS fails
+        let inj = TextInjector(sink: doc, sleeper: sleeper, axAccessor: AXTextAccessor())
+        let result = inj.inject(backspace: 3, text: "Z", method: .backspaceFast, delays: .zero)
+        if case .success = result {
+            XCTFail("expected failure")
+        }
+        // Only one successful BS applied before fail.
+        XCTAssertEqual(doc.content, "hell")
     }
 }

@@ -1,6 +1,7 @@
-// Dấu macOS — serial typing session for EventTap (P0 review + TG-00 fail-open).
+// Dấu macOS — serial typing session for EventTap (P0 review + TG-00/TG-05).
 // Map keys on `dau.typing`; EventTap callback waits only within a bounded budget.
 // Prefer losing a compose over blocking system-wide keyboard.
+// TG-05: never consume original then queue destructive inject async without recovery.
 
 import Foundation
 
@@ -52,13 +53,16 @@ enum TypingCallbackDurationBucket: String, Equatable, Sendable {
 
 /// Owns bridge pipeline + injector on a private serial queue.
 ///
-/// Hot-path contract (TG-00):
+/// Hot-path contract (TG-00 / TG-05):
 /// 1. EN / typing-off / pure boundary keys return passthrough **before** `dau.typing`,
 ///    `SyntheticPostAccess`, AX, or injector.
-/// 2. VI map (+ optional zero-delay inject) runs on the session queue with a **bounded wait**.
+/// 2. VI map (+ inject when consume requires it) runs on the session queue with a **bounded wait**.
 /// 3. On timeout: pass original, invalidate generation — no late inject / stale mutation.
-/// 4. Never call `usleep` on the EventTap callback thread (non-zero delays stay async).
-/// 5. Fail-open: if post access denied or zero-delay inject fails, do **not** consume the original key.
+/// 4. Never call `usleep` on the EventTap callback thread itself (delays run on session queue).
+/// 5. Fail-open: if post access denied or inject fails, do **not** consume the original key.
+/// 6. TG-05: **never** consume original then queue destructive replacement async with no recovery.
+///    Destructive inject (consumeOriginal) always completes on the session queue before return;
+///    only non-destructive inject (pass original + wipe) may run async after return.
 final class TypingSession {
     static let queueLabel = "dau.typing"
     /// Default EventTap wait budget for map + zero-delay inject (prefer pass over hang).
@@ -74,17 +78,21 @@ final class TypingSession {
     private var typingEnabledCached: Bool = true
     /// Live work generation; timeout bumps this so late work skips inject/mutation.
     private var liveGeneration: UInt64 = 0
+    /// Monotonic inject batch id (metadata only).
+    private var nextBatchId: UInt64 = 1
 
-    /// Injection method for async inject (profile layer sets this; queue-owned).
+    /// Injection method for inject (profile layer sets this; queue-owned). Always delivery-safe.
     private var injectionMethod: InjectionMethod = .backspaceFast
     /// Delays applied only on the inject path (never during pure map when delays > 0).
     private var delays: DelayPreset = .zero
+    /// Frontmost bundle id for inject metadata (never used for logic beyond logs).
+    private var frontmostBundleId: String?
 
     /// When false, keys pass through and compose is cleared (EN / blocked / per-app off).
     private var typingEnabled: Bool = true
 
     /// Optional hook after inject (tests / metadata). Not invoked with text content.
-    /// Called for both sync (zero-delay) and async inject paths.
+    /// Called for both sync (pre-return) and async inject paths.
     var onInjectCompleted: ((Result<Void, InjectionError>) -> Void)?
 
     /// Metadata-only telemetry (duration bucket, generation, phase). Never key/text/clipboard.
@@ -92,7 +100,7 @@ final class TypingSession {
 
     /// Test hook: runs on the session queue at the start of bounded work (before access/map).
     var testQueueWorkBegan: (() -> Void)?
-    /// Test hook: runs on the session queue immediately before zero-delay inject.
+    /// Test hook: runs on the session queue immediately before pre-return inject.
     var testBeforeZeroDelayInject: (() -> Void)?
 
     init(
@@ -177,8 +185,7 @@ final class TypingSession {
         if let completed = box.completedSync {
             onInjectCompleted?(completed)
         } else if let payload = box.asyncInject {
-            let method = payload.method
-            let delays = payload.delays
+            // Non-destructive only (consumeOriginal == false). Original already passes.
             let gen = generation
             queue.async { [weak self] in
                 guard let self else { return }
@@ -189,8 +196,9 @@ final class TypingSession {
                 let injectResult = self.injector.inject(
                     backspace: payload.backspace,
                     text: payload.text,
-                    method: method,
-                    delays: delays
+                    method: payload.method,
+                    delays: payload.delays,
+                    context: payload.context
                 )
                 if case .failure = injectResult {
                     self.pipeline.clearProvisionalOnly()
@@ -231,19 +239,30 @@ final class TypingSession {
     // MARK: - Queue-safe configuration (AppDelegate / tests)
 
     /// Hot-path profile + typing master switch. All fields applied atomically on the session queue.
+    /// Stub injection methods are rewritten to an implemented delivery path (TG-05).
     func applyRuntimeSettings(
         typingEnabled: Bool,
         injectionMethod: InjectionMethod,
         delays: DelayPreset,
-        engineMethod: DauMethod
+        engineMethod: DauMethod,
+        frontmostBundleId: String? = nil
     ) {
+        let delivery = injectionMethod.deliveryImplementation
+        if delivery != injectionMethod {
+            fputs(
+                "[dau] session method fallback: requested=\(injectionMethod.rawValue) " +
+                    "delivered=\(delivery.rawValue) bundle=\(frontmostBundleId ?? "-")\n",
+                stderr
+            )
+        }
         stateLock.lock()
         typingEnabledCached = typingEnabled
         stateLock.unlock()
         queue.sync {
             self.typingEnabled = typingEnabled
-            self.injectionMethod = injectionMethod
+            self.injectionMethod = delivery
             self.delays = delays
+            self.frontmostBundleId = frontmostBundleId
             self.pipeline.core.setMethod(engineMethod)
         }
     }
@@ -258,14 +277,28 @@ final class TypingSession {
     }
 
     func setInjectionMethod(_ method: InjectionMethod) {
+        let delivery = method.deliveryImplementation
+        if delivery != method {
+            fputs(
+                "[dau] session method fallback: requested=\(method.rawValue) delivered=\(delivery.rawValue)\n",
+                stderr
+            )
+        }
         queue.sync {
-            self.injectionMethod = method
+            self.injectionMethod = delivery
         }
     }
 
     func setDelays(_ delays: DelayPreset) {
         queue.sync {
             self.delays = delays
+        }
+    }
+
+    /// Metadata-only frontmost bundle id for inject logs (TG-05).
+    func setFrontmostBundleId(_ bundleId: String?) {
+        queue.sync {
+            self.frontmostBundleId = bundleId
         }
     }
 
@@ -302,6 +335,10 @@ final class TypingSession {
         queue.sync { delays }
     }
 
+    func currentFrontmostBundleId() -> String? {
+        queue.sync { frontmostBundleId }
+    }
+
     func isTypingEnabled() -> Bool {
         queue.sync { typingEnabled }
     }
@@ -332,8 +369,9 @@ final class TypingSession {
         }
 
         var decision = mapOnQueue(key)
-        let method = injectionMethod
+        let method = injectionMethod.deliveryImplementation
         let delays = delays
+        let bundleId = frontmostBundleId
 
         guard decision.injectScheduled else {
             box.decision = decision
@@ -347,21 +385,40 @@ final class TypingSession {
             return
         }
 
-        let needsSleep =
-            delays.backspaceUs > 0 || delays.settleUs > 0 || delays.textUs > 0
+        let batchId = allocateBatchId()
+        let contextBase = InjectionDeliveryContext(
+            batchId: batchId,
+            bundleId: bundleId,
+            mode: .sync,
+            requestedMethod: method
+        )
 
-        if needsSleep {
+        // TG-05: destructive inject (consumeOriginal) MUST complete before return.
+        // Only non-destructive inject (pass original + wipe) may run async after return.
+        let mayAsync = delays.requiresSleep && !decision.consumeOriginal
+
+        if mayAsync {
+            var asyncContext = contextBase
+            asyncContext.mode = .async
             box.asyncInject = AsyncInjectPayload(
                 backspace: decision.result.backspace,
                 text: decision.result.text,
                 method: method,
-                delays: delays
+                delays: delays,
+                context: asyncContext
             )
             box.decision = decision
+            fputs(
+                "[dau] inject schedule async non-destructive: \(asyncContext.metadataFragment) " +
+                    "method=\(method.rawValue) bs=\(decision.result.backspace) " +
+                    "textLen=\(decision.result.text.unicodeScalars.count)\n",
+                stderr
+            )
             return
         }
 
-        // Zero delay: inject only if generation still live (no late inject after timeout).
+        // Pre-return inject (zero-delay or delayed-but-destructive). Session queue may sleep;
+        // EventTap wait is still bounded by callback budget (fail-open on timeout).
         testBeforeZeroDelayInject?()
         guard isGenerationLive(generation) else {
             pipeline.resetCompose()
@@ -373,7 +430,8 @@ final class TypingSession {
             backspace: decision.result.backspace,
             text: decision.result.text,
             method: method,
-            delays: delays
+            delays: delays,
+            context: contextBase
         )
 
         guard isGenerationLive(generation) else {
@@ -388,7 +446,10 @@ final class TypingSession {
         box.completedSync = injectResult
         if case .failure = injectResult {
             failOpenAfterInjectFailure(&decision)
-            fputs("[dau] typing fail-open: zero-delay inject failed (pass original)\n", stderr)
+            fputs(
+                "[dau] typing fail-open: inject failed (pass original) \(contextBase.metadataFragment)\n",
+                stderr
+            )
         }
         box.decision = decision
     }
@@ -412,7 +473,7 @@ final class TypingSession {
         )
     }
 
-    /// After zero-delay inject failure: clear compose and force-pass original key (no dead key).
+    /// After inject failure: clear compose and force-pass original key (no dead key).
     private func failOpenAfterInjectFailure(_ decision: inout TypingSessionDecision) {
         pipeline.clearProvisionalOnly()
         pipeline.resetCompose()
@@ -456,6 +517,13 @@ final class TypingSession {
         stateLock.unlock()
     }
 
+    private func allocateBatchId() -> UInt64 {
+        // Called only on session queue.
+        let id = nextBatchId
+        nextBatchId &+= 1
+        return id
+    }
+
     private func scheduleComposeResetAsync() {
         queue.async { [weak self] in
             self?.pipeline.resetCompose()
@@ -491,5 +559,6 @@ final class TypingSession {
         var text: String
         var method: InjectionMethod
         var delays: DelayPreset
+        var context: InjectionDeliveryContext
     }
 }

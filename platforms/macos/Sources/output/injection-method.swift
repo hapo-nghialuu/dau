@@ -1,4 +1,4 @@
-// Dấu macOS — InjectionMethod enum and DelayPreset (WP-03).
+// Dấu macOS — InjectionMethod enum and DelayPreset (WP-03 / TG-05).
 // Bridge-owned injection vocabulary; not Telex/VNI (those are engine methods).
 
 import Foundation
@@ -11,14 +11,17 @@ enum InjectionMethod: String, Codable, CaseIterable, Sendable, Equatable {
     /// Same sequence as `backspaceFast` with higher delays (slow render / Electron).
     case backspaceSlow
     /// Shift+Left selection then replace; empty text uses real Backspace.
+    /// Declared-only for MVP — resolve/inject must fall back explicitly.
     case selection
     /// Backspace then post text one Unicode scalar/chunk at a time.
     case charByChar
     /// Empty/narrow prefix to break autocomplete, then replace.
+    /// Declared-only for MVP — resolve/inject must fall back explicitly.
     case emptyCharPrefix
     /// Post via `CGEventTapProxy` for strict in-callback ordering.
+    /// Declared-only for MVP — resolve/inject must fall back explicitly.
     case syncProxy
-    /// Read/write AX value + selected range; fallback to synthetic keys.
+    /// Read/write AX value + selected range; falls back to synthetic keys on failure.
     case axDirect
     /// Do not inject; keys pass through to the app.
     case passthrough
@@ -39,14 +42,34 @@ enum InjectionMethod: String, Codable, CaseIterable, Sendable, Equatable {
         }
     }
 
-    /// True when MVP implements a real synthetic key path (not only a stub).
+    /// True when a real delivery path is implemented (not a declared-only stub).
+    ///
+    /// - `backspaceFast` / `backspaceSlow` / `charByChar` / `passthrough`: full synthetic path.
+    /// - `axDirect`: real AX attempt with explicit synthetic fallback.
+    /// - `selection` / `emptyCharPrefix` / `syncProxy`: declared-only stubs.
     var isMVPImplemented: Bool {
         switch self {
-        case .backspaceFast, .backspaceSlow, .charByChar, .passthrough:
+        case .backspaceFast, .backspaceSlow, .charByChar, .passthrough, .axDirect:
             return true
-        case .selection, .emptyCharPrefix, .syncProxy, .axDirect:
+        case .selection, .emptyCharPrefix, .syncProxy:
             return false
         }
+    }
+
+    /// Delivery method that is actually implemented.
+    /// Declared-only stubs map explicitly to `backspaceFast` (never silent stub plans).
+    var deliveryImplementation: InjectionMethod {
+        switch self {
+        case .backspaceFast, .backspaceSlow, .charByChar, .passthrough, .axDirect:
+            return self
+        case .selection, .emptyCharPrefix, .syncProxy:
+            return .backspaceFast
+        }
+    }
+
+    /// Whether this method was rewritten away from a declared-only stub.
+    var requiresDeliveryFallback: Bool {
+        self != deliveryImplementation
     }
 }
 
@@ -75,5 +98,50 @@ struct DelayPreset: Equatable, Sendable, Codable {
         self.backspaceUs = backspaceUs
         self.settleUs = settleUs
         self.textUs = textUs
+    }
+
+    /// True when inject must sleep (cannot complete as pure zero-delay posts).
+    var requiresSleep: Bool {
+        backspaceUs > 0 || settleUs > 0 || textUs > 0
+    }
+}
+
+// MARK: - Delivery context (TG-05 metadata; never includes typed content)
+
+/// Sync vs async inject scheduling (repro metadata only).
+enum InjectionDeliveryMode: String, Equatable, Sendable {
+    case sync
+    case async
+}
+
+/// Metadata attached to one inject batch for repro / logs.
+/// **Never** carry raw typed text or key codes that can reconstruct content.
+struct InjectionDeliveryContext: Equatable, Sendable {
+    /// Monotonic batch id from the typing session (0 when injector called standalone).
+    var batchId: UInt64
+    /// Frontmost app bundle id when known (may be nil in unit tests).
+    var bundleId: String?
+    /// Whether this inject runs before the EventTap decision returns (`sync`) or after (`async`).
+    var mode: InjectionDeliveryMode
+    /// Method requested by profile before stub fallback (for logs).
+    var requestedMethod: InjectionMethod?
+
+    init(
+        batchId: UInt64 = 0,
+        bundleId: String? = nil,
+        mode: InjectionDeliveryMode = .sync,
+        requestedMethod: InjectionMethod? = nil
+    ) {
+        self.batchId = batchId
+        self.bundleId = bundleId
+        self.mode = mode
+        self.requestedMethod = requestedMethod
+    }
+
+    /// Metadata-only log fragment (no typed content).
+    var metadataFragment: String {
+        let bundle = bundleId ?? "-"
+        let requested = requestedMethod.map(\.rawValue) ?? "-"
+        return "batch=\(batchId) bundle=\(bundle) mode=\(mode.rawValue) requested=\(requested)"
     }
 }

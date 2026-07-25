@@ -62,6 +62,29 @@ struct InjectionProfile: Codable, Equatable, Sendable {
         injectionMethod: .backspaceFast,
         delays: .zero
     )
+
+    /// Method actually used for delivery (declared-only stubs → explicit implemented fallback).
+    var deliveryMethod: InjectionMethod {
+        injectionMethod.deliveryImplementation
+    }
+
+    /// Profile with stub methods rewritten to an implemented delivery path.
+    /// Logs once when rewriting (metadata only — no typed content).
+    func sanitizedForDelivery(logFallback: Bool = true) -> InjectionProfile {
+        let delivered = deliveryMethod
+        guard delivered != injectionMethod else { return self }
+        if logFallback {
+            let bundle = bundleId ?? "-"
+            fputs(
+                "[dau] profile method fallback: bundle=\(bundle) " +
+                    "requested=\(injectionMethod.rawValue) → delivered=\(delivered.rawValue)\n",
+                stderr
+            )
+        }
+        var copy = self
+        copy.injectionMethod = delivered
+        return copy
+    }
 }
 
 // MARK: - Resolution result
@@ -86,6 +109,28 @@ struct ResolvedInjectionSettings: Equatable, Sendable {
     /// Effective injector method when typing is off.
     var effectiveInjectionMethod: InjectionMethod {
         typingEnabled ? injectionMethod : .passthrough
+    }
+
+    /// Delivery method after stub fallback (never a declared-only stub).
+    var deliveryMethod: InjectionMethod {
+        effectiveInjectionMethod.deliveryImplementation
+    }
+
+    /// Settings safe for `TypingSession.applyRuntimeSettings` (stubs rewritten).
+    func sanitizedForDelivery(logFallback: Bool = true) -> ResolvedInjectionSettings {
+        let requested = injectionMethod
+        let delivered = requested.deliveryImplementation
+        guard delivered != requested else { return self }
+        if logFallback {
+            fputs(
+                "[dau] resolve method fallback: source=\(source.rawValue) " +
+                    "requested=\(requested.rawValue) → delivered=\(delivered.rawValue)\n",
+                stderr
+            )
+        }
+        var copy = self
+        copy.injectionMethod = delivered
+        return copy
     }
 }
 

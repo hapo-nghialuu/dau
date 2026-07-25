@@ -13,6 +13,83 @@ final class InjectionProfileTests: XCTestCase {
         XCTAssertEqual(d.injectionMethod, .backspaceFast)
         XCTAssertEqual(d.delays, .zero)
         XCTAssertNil(d.bundleId)
+        XCTAssertEqual(d.deliveryMethod, .backspaceFast)
+    }
+
+    // MARK: - TG-05 delivery fallback
+
+    func testStubMethodsRequireDeliveryFallback() {
+        XCTAssertTrue(InjectionMethod.selection.requiresDeliveryFallback)
+        XCTAssertTrue(InjectionMethod.emptyCharPrefix.requiresDeliveryFallback)
+        XCTAssertTrue(InjectionMethod.syncProxy.requiresDeliveryFallback)
+        XCTAssertFalse(InjectionMethod.backspaceFast.requiresDeliveryFallback)
+        XCTAssertFalse(InjectionMethod.backspaceSlow.requiresDeliveryFallback)
+        XCTAssertFalse(InjectionMethod.charByChar.requiresDeliveryFallback)
+        XCTAssertFalse(InjectionMethod.axDirect.requiresDeliveryFallback)
+        XCTAssertFalse(InjectionMethod.passthrough.requiresDeliveryFallback)
+    }
+
+    func testProfileSanitizedForDeliveryRewritesStubs() {
+        let raw = InjectionProfile(
+            bundleId: "com.example.App",
+            enabled: true,
+            injectionMethod: .selection,
+            delays: .fast
+        )
+        XCTAssertEqual(raw.injectionMethod, .selection)
+        let clean = raw.sanitizedForDelivery(logFallback: false)
+        XCTAssertEqual(clean.injectionMethod, .backspaceFast)
+        XCTAssertEqual(clean.delays, .fast)
+        XCTAssertEqual(clean.bundleId, "com.example.App")
+    }
+
+    func testResolvedSettingsSanitizedForDelivery() {
+        let resolved = ResolvedInjectionSettings(
+            typingEnabled: true,
+            engineMethod: .telex,
+            injectionMethod: .emptyCharPrefix,
+            delays: .zero,
+            source: .userOverride
+        )
+        XCTAssertEqual(resolved.injectionMethod, .emptyCharPrefix)
+        XCTAssertEqual(resolved.deliveryMethod, .backspaceFast)
+        let clean = resolved.sanitizedForDelivery(logFallback: false)
+        XCTAssertEqual(clean.injectionMethod, .backspaceFast)
+        XCTAssertEqual(clean.source, .userOverride)
+    }
+
+    func testShippedProfilesOnlyUseImplementedMethods() {
+        // Load real shipped profiles.toml content via file if present; else sample.
+        let url = Bundle.main.url(forResource: "profiles", withExtension: "toml")
+        let raw: String
+        if let url, let contents = try? String(contentsOf: url, encoding: .utf8) {
+            raw = contents
+        } else {
+            // Fallback: parse the repo-shipped sample shape used by store tests.
+            raw = """
+            [default]
+            injection_method = "backspaceFast"
+            [[apps]]
+            bundle_id = "com.apple.Terminal"
+            injection_method = "backspaceSlow"
+            """
+        }
+        let parsed = ShippedProfilesTOML.parse(raw)
+        XCTAssertTrue(
+            parsed.defaultProfile.injectionMethod.isMVPImplemented,
+            "default must not be a declared-only stub"
+        )
+        for (bundle, profile) in parsed.apps {
+            XCTAssertTrue(
+                profile.injectionMethod.isMVPImplemented,
+                "shipped \(bundle) uses unimplemented method \(profile.injectionMethod.rawValue)"
+            )
+            XCTAssertEqual(
+                profile.deliveryMethod,
+                profile.injectionMethod,
+                "shipped \(bundle) should not need fallback rewrite"
+            )
+        }
     }
 
     func testProfileCodableRoundTrip() throws {
