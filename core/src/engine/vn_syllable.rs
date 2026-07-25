@@ -198,7 +198,11 @@ fn onset_vowel_harmony(onset: &str, first_vowel: char) -> bool {
     let front = is_front_vowel_class(first_vowel);
     match onset {
         "k" | "gh" | "ngh" => front,
-        "c" | "g" | "ng" => !front,
+        // `g` normally rejects front vowels (use `gh`+e/i/ê). Exception: digraph
+        // `gi` when `i` is the sole nucleus (gì, gìn, gíp) — split as onset `g` +
+        // nucleus `i`, so law4 must allow that pair. `ge`/`gy` stay invalid.
+        "g" => !front || first_vowel == 'i',
+        "c" | "ng" => !front,
         _ => true,
     }
 }
@@ -376,6 +380,31 @@ mod tests {
         assert!(!is_valid_syllable(&b));
         assert!(!is_valid_committed_syllable(&b));
         assert_eq!(b.display(), "đuă");
+    }
+
+    #[test]
+    fn allows_gi_digraph_when_i_is_nucleus() {
+        // Bare gi / gì: onset g + nucleus i (not g+front reject).
+        assert!(is_valid_syllable(&buf_from("gi")));
+        let mut gi_grave = buf_from("gi");
+        if let Some(ch) = gi_grave.get_mut(1) {
+            ch.tone = Tone::Grave;
+        }
+        assert!(is_valid_syllable(&gi_grave));
+        assert!(is_valid_committed_syllable(&gi_grave));
+        assert_eq!(gi_grave.display(), "gì");
+
+        // gìn: same split after coda attaches.
+        let mut gin = buf_from("gin");
+        if let Some(ch) = gin.get_mut(1) {
+            ch.tone = Tone::Grave;
+        }
+        assert!(is_valid_syllable(&gin));
+        assert_eq!(gin.display(), "gìn");
+
+        // ge still illegal (must be ghe); gy not a gi digraph.
+        assert!(!is_valid_syllable(&buf_from("ge")));
+        assert!(!is_valid_syllable(&buf_from("gy")));
     }
 
     #[test]

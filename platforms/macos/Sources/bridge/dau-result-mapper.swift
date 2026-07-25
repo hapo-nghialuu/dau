@@ -53,8 +53,9 @@ enum DauResultMapper {
         case DauAction_None:
             // P0: if we still have on-screen provisional text, wipe it then forward the key.
             // consumeOriginal=false so the original key still reaches the app after inject.
-            if provisionalLength > 0 {
-                let wipe = provisionalLength
+            let displayedLength = provisionalText.unicodeScalars.count
+            if displayedLength > 0 {
+                let wipe = displayedLength
                 provisionalText = ""
                 provisionalLength = 0
                 return BridgeResult(
@@ -82,8 +83,9 @@ enum DauResultMapper {
         case DauAction_Commit:
             // If committed text equals what is already on screen, skip delete/retype.
             let unchanged = text == provisionalText
+            let displayedLength = provisionalText.unicodeScalars.count
             let result = BridgeResult(
-                backspace: unchanged ? 0 : provisionalLength,
+                backspace: unchanged ? 0 : displayedLength,
                 text: unchanged ? "" : text,
                 consumeOriginal: false, // break key is always forwarded after inject
                 capitalizeNext: capitalizeNext
@@ -94,9 +96,10 @@ enum DauResultMapper {
 
         case DauAction_Restore:
             // Swallow Esc when there was compose or raw text to inject; empty Esc forwards.
-            let hadCompose = provisionalLength > 0 || !text.isEmpty
+            let displayedLength = provisionalText.unicodeScalars.count
+            let hadCompose = displayedLength > 0 || !text.isEmpty
             let result = BridgeResult(
-                backspace: provisionalLength,
+                backspace: displayedLength,
                 text: text,
                 consumeOriginal: hadCompose,
                 capitalizeNext: capitalizeNext
@@ -139,7 +142,7 @@ enum DauResultMapper {
         provisionalLength: inout Int
     ) -> BridgeResult {
         let oldText = provisionalText
-        let oldLen = provisionalLength
+        let oldLen = oldText.unicodeScalars.count
         let newLen = text.unicodeScalars.count
         let common = commonPrefixScalarCount(oldText, text)
 

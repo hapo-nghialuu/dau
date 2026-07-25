@@ -372,3 +372,81 @@ fn backspace_repeated_to_empty_then_none() {
     assert_eq!(eng.backspace_one_display_scalar(), None);
     assert_eq!(eng.backspace_one_display_scalar(), None);
 }
+
+// ─── gi digraph: i is nucleus (gì / gín…), not g+front reject ───
+
+#[test]
+fn telex_gi_bare_tones() {
+    assert_eq!(type_word(Method::Telex, "gif"), "gì");
+    assert_eq!(type_word(Method::Telex, "gis"), "gí");
+    assert_eq!(type_word(Method::Telex, "gir"), "gỉ");
+    assert_eq!(type_word(Method::Telex, "gix"), "gĩ");
+    assert_eq!(type_word(Method::Telex, "gij"), "gị");
+    // bare gi (no tone key) stays gi
+    assert_eq!(type_word(Method::Telex, "gi"), "gi");
+    // gi + coda
+    assert_eq!(type_word(Method::Telex, "ginf"), "gìn");
+}
+
+#[test]
+fn vni_gi_bare_tones() {
+    assert_eq!(type_word(Method::Vni, "gi2"), "gì");
+    assert_eq!(type_word(Method::Vni, "gi1"), "gí");
+    assert_eq!(type_word(Method::Vni, "gi3"), "gỉ");
+    assert_eq!(type_word(Method::Vni, "gi4"), "gĩ");
+    assert_eq!(type_word(Method::Vni, "gi5"), "gị");
+    assert_eq!(type_word(Method::Vni, "gin2"), "gìn");
+}
+
+#[test]
+fn telex_gi_qu_tone_on_following_vowel() {
+    // gi/qu + vowel: digraph onset; tone on the real nucleus vowel.
+    assert_eq!(type_word(Method::Telex, "giaf"), "già");
+    assert_eq!(type_word(Method::Telex, "gias"), "giá");
+    assert_eq!(type_word(Method::Telex, "giar"), "giả");
+    assert_eq!(type_word(Method::Telex, "gios"), "gió");
+    assert_eq!(type_word(Method::Telex, "quaf"), "quà");
+    assert_eq!(type_word(Method::Telex, "quas"), "quá");
+    assert_eq!(type_word(Method::Telex, "quar"), "quả");
+}
+
+#[test]
+fn vni_gi_qu_tone_on_following_vowel() {
+    assert_eq!(type_word(Method::Vni, "gia2"), "già");
+    assert_eq!(type_word(Method::Vni, "gia1"), "giá");
+    assert_eq!(type_word(Method::Vni, "gia3"), "giả");
+    assert_eq!(type_word(Method::Vni, "gio1"), "gió");
+    assert_eq!(type_word(Method::Vni, "qua2"), "quà");
+    assert_eq!(type_word(Method::Vni, "qua1"), "quá");
+    assert_eq!(type_word(Method::Vni, "qua3"), "quả");
+}
+
+#[test]
+fn gi_qu_tone_placement_regressions() {
+    // Bare gi still hosts tone on i (previous fix).
+    assert_eq!(type_word(Method::Telex, "gif"), "gì");
+    // qu + mark + tone
+    assert_eq!(type_word(Method::Telex, "quawms"), "quắm");
+    // gi + marked nuclei
+    assert_eq!(type_word(Method::Telex, "giuwx"), "giữ");
+    assert_eq!(type_word(Method::Telex, "giuwowngf"), "giường");
+    assert_eq!(type_word(Method::Telex, "giowf"), "giờ");
+    assert_eq!(type_word(Method::Telex, "gieets"), "giết");
+    assert_eq!(type_word(Method::Telex, "gieesng"), "giếng");
+    // qu + y / e nuclei
+    assert_eq!(type_word(Method::Telex, "quy"), "quy");
+    assert_eq!(type_word(Method::Telex, "quys"), "quý");
+    assert_eq!(type_word(Method::Telex, "quen"), "quen");
+    assert_eq!(type_word(Method::Telex, "quyener"), "quyển");
+    // Control
+    assert_eq!(type_word(Method::Telex, "dduf"), "đù");
+    assert_eq!(type_word(Method::Telex, "gia"), "gia");
+}
+
+#[test]
+fn gi_harmony_negative_no_loosen_ge() {
+    // g + front e must stay invalid (orthography uses gh). Tone must not stick.
+    assert_eq!(type_word(Method::Telex, "gef"), "gef");
+    assert_eq!(type_word(Method::Telex, "ges"), "ges");
+    assert_eq!(type_word(Method::Vni, "ge2"), "ge2");
+}

@@ -284,15 +284,73 @@ final class DauResultMapperTests: XCTestCase {
         XCTAssertEqual(provisionalLength, 0)
     }
 
+    func testCommitAutoRestoreRawLongerThanDisplayedReplacesDocumentOnce() {
+        var doc = FakeDocument(text: "test")
+        provisionalText = "test"
+        provisionalLength = "test".unicodeScalars.count
+
+        let result = map(action: DauAction_Commit, text: "tesst")
+        doc.apply(result: result, originalKey: " ")
+
+        XCTAssertEqual(doc.text, "tesst ")
+    }
+
+    func testCommitAutoRestoreRawShorterThanDisplayedReplacesDocumentOnce() {
+        var doc = FakeDocument(text: "test")
+        provisionalText = "test"
+        provisionalLength = "test".unicodeScalars.count
+
+        let result = map(action: DauAction_Commit, text: "tes")
+        doc.apply(result: result, originalKey: " ")
+
+        XCTAssertEqual(doc.text, "tes ")
+    }
+
+    func testCommitAutoRestoreEqualTextForwardsSpaceOnce() {
+        var doc = FakeDocument(text: "test")
+        provisionalText = "test"
+        provisionalLength = "test".unicodeScalars.count
+
+        let result = map(action: DauAction_Commit, text: "test")
+        doc.apply(result: result, originalKey: " ")
+
+        XCTAssertEqual(doc.text, "test ")
+    }
+
+    func testCommitAutoRestoreVietnameseRawUsesDisplayedScalarCount() {
+        var doc = FakeDocument(text: "tiếng")
+        provisionalText = "tiếng"
+        provisionalLength = provisionalText.unicodeScalars.count
+
+        let result = map(action: DauAction_Commit, text: "tieengs")
+        doc.apply(result: result, originalKey: " ")
+
+        XCTAssertEqual(doc.text, "tieengs ")
+    }
+
+    func testCommitAutoRestoreIgnoresStaleLengthAndUsesDisplayedText() {
+        var doc = FakeDocument(text: "test")
+        provisionalText = "test"
+        provisionalLength = 3 // Reproduces the observed t + raw replacement.
+
+        let result = map(action: DauAction_Commit, text: "tesst")
+        doc.apply(result: result, originalKey: " ")
+
+        XCTAssertEqual(doc.text, "tesst ")
+    }
+
     // MARK: - Restore
 
     func testRestoreUsesProvisionalLengthPlusRaw() {
+        var doc = FakeDocument(text: "tiếng")
         provisionalText = "tiếng"
         provisionalLength = "tiếng".unicodeScalars.count
         let r = map(action: DauAction_Restore, text: "tieengs")
+        doc.apply(result: r)
         XCTAssertEqual(r.backspace, "tiếng".unicodeScalars.count)
         XCTAssertEqual(r.text, "tieengs")
         XCTAssertTrue(r.consumeOriginal)
+        XCTAssertEqual(doc.text, "tieengs")
         XCTAssertEqual(provisionalText, "")
         XCTAssertEqual(provisionalLength, 0)
     }

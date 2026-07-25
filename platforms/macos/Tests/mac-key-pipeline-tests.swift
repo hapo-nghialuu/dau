@@ -2,6 +2,20 @@
 // No EventTap; feeds Unicode scalars directly.
 import XCTest
 
+private struct PipelineFakeDocument {
+    var text = ""
+
+    mutating func apply(_ result: BridgeResult, originalKey: String? = nil) {
+        let scalars = Array(text.unicodeScalars)
+        let keep = max(0, scalars.count - result.backspace)
+        text = String(String.UnicodeScalarView(scalars.prefix(keep)))
+        text += result.text
+        if !result.consumeOriginal, let originalKey {
+            text += originalKey
+        }
+    }
+}
+
 final class MacKeyPipelineTests: XCTestCase {
     private var bridge: DauCoreBridge!
     private var pipeline: MacKeyPipeline!
@@ -226,6 +240,20 @@ final class MacKeyPipelineTests: XCTestCase {
             XCTAssertEqual(r.backspace, before.unicodeScalars.count)
         }
         XCTAssertEqual(pipeline.provisionalLength, 0)
+    }
+
+    func testAutoRestoreTesstSpaceProducesRawTextOnce() {
+        bridge.setAutoRestore(true)
+        var document = PipelineFakeDocument()
+
+        for scalar in "tesst".unicodeScalars {
+            document.apply(pipeline.handlePrintable(scalar), originalKey: String(scalar))
+        }
+        XCTAssertEqual(document.text, "test")
+        XCTAssertEqual(pipeline.provisionalText, "test")
+
+        document.apply(pipeline.handleBreak(sc(" ")), originalKey: " ")
+        XCTAssertEqual(document.text, "tesst ")
     }
 
     // MARK: - Restore / Esc
