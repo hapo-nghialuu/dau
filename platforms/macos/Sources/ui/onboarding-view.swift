@@ -266,12 +266,24 @@ final class OnboardingController: NSObject {
             readyCloseWorkItem?.cancel()
             readyCloseWorkItem = nil
             titleLabel?.stringValue = "Cần thêm quyền để gõ"
-            bodyLabel?.stringValue =
-                "Dấu đã có quyền Trợ năng và đang theo dõi bàn phím, nhưng cần quyền gửi sự kiện "
-                + "để thay thế chữ đang gõ. Bấm Cấp quyền để tiếp tục."
-            statusLabel?.stringValue = "Thiếu quyền gửi sự kiện — chưa sẵn sàng."
+            // After an explicit request, OS often will not re-show a dialog — guide recovery.
+            let alreadyAsked = SyntheticPostAccess.didRequestThisProcess
+            if alreadyAsked {
+                bodyLabel?.stringValue =
+                    "Vẫn thiếu quyền gửi sự kiện (cổng TCC riêng với Trợ năng). "
+                    + "Nếu không thấy hộp thoại: System Settings → Privacy & Security → Accessibility "
+                    + "→ xóa Dấu khỏi danh sách, thoát app, thêm lại và bật. "
+                    + "Build ad-hoc / đổi chữ ký sau mỗi lần rebuild thường phải làm lại bước này."
+                statusLabel?.stringValue = "Vẫn thiếu quyền gửi sự kiện — xem hướng dẫn phía trên."
+                primaryButton?.title = "Thử lại quyền…"
+            } else {
+                bodyLabel?.stringValue =
+                    "Dấu đã có quyền Trợ năng và đang theo dõi bàn phím, nhưng cần quyền gửi sự kiện "
+                    + "để thay thế chữ đang gõ. Bấm Cấp quyền để tiếp tục."
+                statusLabel?.stringValue = "Thiếu quyền gửi sự kiện — chưa sẵn sàng."
+                primaryButton?.title = "Cấp quyền…"
+            }
             statusLabel?.textColor = .systemOrange
-            primaryButton?.title = "Cấp quyền…"
             primaryButton?.isHidden = false
             primaryButton?.isEnabled = true
             secondaryButton?.title = "Mở Cài đặt hệ thống…"

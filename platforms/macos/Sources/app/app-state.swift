@@ -174,6 +174,7 @@ final class AppState: ObservableObject {
     /// Status-item title only (no logo image).
     /// - Ready + VI: **VI**
     /// - Ready + EN / blocked / setup incomplete: **EN**
+    /// Never show **VI** while setup incomplete (would claim typing works when it does not).
     var menuBarTitle: String {
         menuBarIconState == .active ? "VI" : "EN"
     }
@@ -191,18 +192,26 @@ final class AppState: ObservableObject {
         return .active
     }
 
+    /// User VI/EN intent for UI when the app is not ready to type yet.
+    /// Distinct from `menuBarTitle` which must not show VI until inject actually works.
+    private var typingIntentLabel: String {
+        typingEnabled ? "ý định VI" : "ý định EN"
+    }
+
     /// Hover / accessibility description (Vietnamese) — includes toggle shortcut.
+    /// When setup is incomplete, surface VI/EN **intent** so ⌘⇧ toggle is not invisible,
+    /// without claiming the app can inject (badge stays EN / not `.active`).
     var menuBarToolTip: String {
         let sc = toggleShortcutDisplay
         switch menuBarIconState {
         case .setup:
             if !accessibilityTrusted {
-                return "Dấu — cần cấp quyền Accessibility · bật/tắt \(sc)"
+                return "Dấu — chưa sẵn sàng (\(typingIntentLabel)) · cần cấp quyền Accessibility · bật/tắt \(sc)"
             }
             if !eventTapRunning {
-                return "Dấu — event tap chưa chạy · bật/tắt \(sc)"
+                return "Dấu — chưa sẵn sàng (\(typingIntentLabel)) · event tap chưa chạy · bật/tắt \(sc)"
             }
-            return "Dấu — cần quyền gửi sự kiện để gõ · bật/tắt \(sc)"
+            return "Dấu — chưa sẵn sàng (\(typingIntentLabel)) · cần quyền gửi sự kiện để gõ · bật/tắt \(sc)"
         case .active:
             return "Dấu — VI (đang gõ tiếng Việt) · bật/tắt \(sc)"
         case .inactive:
@@ -219,15 +228,15 @@ final class AppState: ObservableObject {
         switch menuBarIconState {
         case .setup:
             if !accessibilityTrusted {
-                return "Dấu — chưa sẵn sàng · cần cấp quyền Accessibility · bật/tắt \(sc)"
+                return "Dấu — chưa sẵn sàng · \(typingIntentLabel) · cần cấp quyền Accessibility · bật/tắt \(sc)"
             }
             if !eventTapRunning {
-                return "Dấu — chưa sẵn sàng · event tap chưa chạy · bật/tắt \(sc)"
+                return "Dấu — chưa sẵn sàng · \(typingIntentLabel) · event tap chưa chạy · bật/tắt \(sc)"
             }
             if !postEventAccessGranted {
-                return "Dấu — chưa sẵn sàng · cần quyền gửi sự kiện · bật/tắt \(sc)"
+                return "Dấu — chưa sẵn sàng · \(typingIntentLabel) · cần quyền gửi sự kiện · bật/tắt \(sc)"
             }
-            return "Dấu — chưa sẵn sàng · bật/tắt \(sc)"
+            return "Dấu — chưa sẵn sàng · \(typingIntentLabel) · bật/tắt \(sc)"
         case .active:
             return "Dấu — VI · bật/tắt \(sc)"
         case .inactive:
@@ -257,8 +266,11 @@ final class AppState: ObservableObject {
     }
 
     /// Header subtitle: current method + toggle shortcut hint.
+    /// When not ready, append VI/EN **intent** so the menu reflects ⌘⇧ without a false VI badge.
     var menuHeaderSubtitle: String {
-        "\(engineMethod.menuLabel) · \(toggleShortcutDisplay)"
+        let base = "\(engineMethod.menuLabel) · \(toggleShortcutDisplay)"
+        guard !isReadyToType else { return base }
+        return "\(base) · \(typingIntentLabel)"
     }
 
     /// Reset toggle hotkey to product default (⇧⌘E).

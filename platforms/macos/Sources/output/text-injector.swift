@@ -37,8 +37,9 @@ enum SyntheticPostAccess {
     private static let lock = NSLock()
     /// Cached OS post-event capability. Refresh off the keyboard hot path.
     private static var _cachedGranted = false
-    /// At most one OS request prompt per process lifetime (UI path only).
-    private static var didRequestOnce = false
+    /// True after at least one UI-initiated `CGRequestPostEventAccess` this process.
+    /// Used for onboarding copy only — does **not** block further UI re-prompts.
+    private static var _didRequestThisProcess = false
 
     static var isGranted: Bool { check() }
 
@@ -49,6 +50,13 @@ enum SyntheticPostAccess {
         return _cachedGranted
     }
 
+    /// Whether setup UI has already asked the OS for post-event access this process.
+    static var didRequestThisProcess: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _didRequestThisProcess
+    }
+
     /// Test / lifecycle hook to set the snapshot without touching OS APIs.
     static func setCachedGranted(_ value: Bool) {
         lock.lock()
@@ -57,7 +65,8 @@ enum SyntheticPostAccess {
     }
 
     /// Refresh cache from the OS.
-    /// - Parameter prompt: when true, may call `CGRequestPostEventAccess()` once (setup/recovery UI only).
+    /// - Parameter prompt: when true, may call `CGRequestPostEventAccess()` (setup/recovery UI only).
+    ///   Each explicit UI click may request again; hot path / poll always uses `prompt: false`.
     static func refreshFromSystem(prompt: Bool = false) {
         if #available(macOS 10.15, *) {
             if CGPreflightPostEventAccess() {
@@ -66,15 +75,12 @@ enum SyntheticPostAccess {
             }
             if prompt {
                 lock.lock()
-                let shouldRequest = !didRequestOnce
-                if shouldRequest {
-                    didRequestOnce = true
-                }
+                _didRequestThisProcess = true
                 lock.unlock()
-                if shouldRequest {
-                    fputs("[dau] post-event access denied; requesting once (UI)\n", stderr)
-                    _ = CGRequestPostEventAccess()
-                }
+                // Explicit UI recovery may re-request. OS may still not re-show a dialog
+                // after a prior denial — onboarding must guide the user to System Settings.
+                fputs("[dau] post-event access denied; requesting (UI)\n", stderr)
+                _ = CGRequestPostEventAccess()
                 let granted = CGPreflightPostEventAccess()
                 setCachedGranted(granted)
                 if granted {
@@ -94,7 +100,7 @@ enum SyntheticPostAccess {
 
     static func resetToDefault() {
         lock.lock()
-        didRequestOnce = false
+        _didRequestThisProcess = false
         _cachedGranted = false
         lock.unlock()
         check = { cachedGranted }
@@ -254,7 +260,11 @@ final class FakeTargetDocument: InjectorEventSink {
 }
 
 /// Production sink: CGEvent keyboard posts with synthetic marker.
-/// Prefer HID; fall back to session tap when event creation for HID path fails.
+/// Primary: private event source posted at the session tap — synthetic events enter the
+/// stream downstream of the keyboard tap, so ordering vs. physical keys is deterministic
+/// (posting at the HID tap re-enters upstream and races repaint-heavy apps like terminals).
+/// Injection strategy (post location + source) ported from Gõ Nhanh `RustBridge.swift`
+/// (BSD-3-Clause — see NOTICE).
 final class CGEventInjectorSink: InjectorEventSink {
     /// Virtual key code for Delete/Backspace (Carbon `kVK_Delete`).
     private static let backspaceKeyCode: CGKeyCode = 51
@@ -262,6 +272,19 @@ final class CGEventInjectorSink: InjectorEventSink {
     private static let leftArrowKeyCode: CGKeyCode = 123
     /// Narrow no-break space (U+202F) used by empty-char-prefix method.
     private static let emptyPrefixScalar: Unicode.Scalar = "\u{202F}"
+
+    /// Reused event source: creating a source per event does WindowServer IPC and can
+    /// blow the 12ms callback budget; Gõ Nhanh likewise reuses one source per batch.
+    /// Sink calls are serialized by TextInjector's lock, so no extra locking here.
+    private var cachedSource: CGEventSource?
+
+    private func eventSource() -> CGEventSource? {
+        if cachedSource == nil {
+            cachedSource = CGEventSource(stateID: .privateState)
+                ?? CGEventSource(stateID: .combinedSessionState)
+        }
+        return cachedSource
+    }
 
     @discardableResult
     func postBackspace() -> Bool {
@@ -290,24 +313,21 @@ final class CGEventInjectorSink: InjectorEventSink {
 
     @discardableResult
     private func postKey(_ keyCode: CGKeyCode, keyDown: Bool, flags: CGEventFlags = []) -> Bool {
-        // HID first; session state as create fallback (some environments fail HID source).
-        let attempts: [(CGEventSourceStateID, CGEventTapLocation)] = [
-            (.hidSystemState, .cghidEventTap),
-            (.combinedSessionState, .cgSessionEventTap),
-        ]
-        for (state, location) in attempts {
-            let source = CGEventSource(stateID: state)
-            guard let event = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: keyDown) else {
-                continue
-            }
-            if !flags.isEmpty {
-                event.flags = flags
-            }
-            SyntheticEventMarker.apply(to: event)
-            event.post(tap: location)
-            return true
+        // Session tap: synthetic events enter downstream of the keyboard tap, so ordering
+        // vs. physical keys is deterministic (HID posting re-enters upstream and races).
+        guard let event = CGEvent(
+            keyboardEventSource: eventSource(),
+            virtualKey: keyCode,
+            keyDown: keyDown
+        ) else {
+            return false
         }
-        return false
+        if !flags.isEmpty {
+            event.flags = flags
+        }
+        SyntheticEventMarker.apply(to: event)
+        event.post(tap: .cgSessionEventTap)
+        return true
     }
 
     @discardableResult
@@ -316,27 +336,20 @@ final class CGEventInjectorSink: InjectorEventSink {
         let length = utf16.count
         guard length > 0 else { return true }
 
-        let attempts: [(CGEventSourceStateID, CGEventTapLocation)] = [
-            (.hidSystemState, .cghidEventTap),
-            (.combinedSessionState, .cgSessionEventTap),
-        ]
-        for (state, location) in attempts {
-            let source = CGEventSource(stateID: state)
-            // Both down+up must be created; partial post would leave stuck keys.
-            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
-                  let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
-            else {
-                continue
-            }
-            down.keyboardSetUnicodeString(stringLength: length, unicodeString: &utf16)
-            up.keyboardSetUnicodeString(stringLength: length, unicodeString: &utf16)
-            SyntheticEventMarker.apply(to: down)
-            SyntheticEventMarker.apply(to: up)
-            down.post(tap: location)
-            up.post(tap: location)
-            return true
+        // Both down+up must be created; partial post would leave stuck keys.
+        let source = eventSource()
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
+        else {
+            return false
         }
-        return false
+        down.keyboardSetUnicodeString(stringLength: length, unicodeString: &utf16)
+        up.keyboardSetUnicodeString(stringLength: length, unicodeString: &utf16)
+        SyntheticEventMarker.apply(to: down)
+        SyntheticEventMarker.apply(to: up)
+        down.post(tap: .cgSessionEventTap)
+        up.post(tap: .cgSessionEventTap)
+        return true
     }
 }
 
@@ -486,19 +499,22 @@ final class TextInjector {
         }
 
         let commands = plan(backspace: backspace, text: text, method: delivery, delays: delays)
+        let executeStart = DispatchTime.now().uptimeNanoseconds
         let result = execute(commands)
+        let executeMs = Double(DispatchTime.now().uptimeNanoseconds &- executeStart) / 1_000_000
         switch result {
         case .success:
-            logInjectResult(meta: meta, ok: true, detail: "posted")
+            logInjectResult(meta: meta, ok: true, detail: "posted", durationMs: executeMs)
         case .failure(let err):
-            logInjectResult(meta: meta, ok: false, detail: "\(err)")
+            logInjectResult(meta: meta, ok: false, detail: "\(err)", durationMs: executeMs)
         }
         return result
     }
 
     /// Stderr metadata only — never raw key or text content.
-    private func logInjectResult(meta: String, ok: Bool, detail: String) {
-        let line = "[dau] inject \(meta) post=\(ok ? "ok" : "fail") detail=\(detail)\n"
+    private func logInjectResult(meta: String, ok: Bool, detail: String, durationMs: Double? = nil) {
+        let dur = durationMs.map { String(format: " durMs=%.1f", $0) } ?? ""
+        let line = "[dau] inject \(meta) post=\(ok ? "ok" : "fail") detail=\(detail)\(dur)\n"
         fputs(line, stderr)
         onMetadata?(line.trimmingCharacters(in: .newlines))
     }

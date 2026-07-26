@@ -138,12 +138,24 @@ Chạy foreground (log stderr `[dau] …`):
 platforms/macos/build/Debug/Dau.app/Contents/MacOS/Dau
 ```
 
-### 2. Accessibility (bắt buộc)
+### 2. Accessibility + quyền gửi sự kiện (bắt buộc)
 
-1. System Settings → **Privacy & Security** → **Accessibility** → bật **Dau**.
-2. Hoặc follow onboarding trong app (prompt TCC).
-3. Menu bar: restart tap / đợi trạng thái trusted (README cũ: `Dấu?` cho đến khi OK).
-4. **Mỗi lần đổi path binary / rebuild** có thể phải xóa Dau khỏi list Accessibility rồi thêm lại.
+Hai cổng TCC **riêng** (macOS 10.15+):
+
+| API | Ý nghĩa |
+|-----|---------|
+| `AXIsProcessTrusted` | Trợ năng — bắt phím / event tap |
+| `CGPreflightPostEventAccess` / `CGRequestPostEventAccess` | Gửi/tổng hợp sự kiện — inject chữ thay thế |
+
+Triệu chứng thường gặp khi chỉ có AX: menu **“Accessibility: đã cấp · thiếu quyền gửi sự kiện…”**, onboarding **“Cần thêm quyền để gõ”**, badge **EN** (đúng — app chưa gõ được).
+
+1. System Settings → **Privacy & Security** → **Accessibility** → bật **Dau** (hoặc **Dấu**).
+2. Trong onboarding bấm **Cấp quyền…** để gọi `CGRequestPostEventAccess` (có thể hiện hộp thoại).
+3. Nếu **vẫn** thiếu post-event (nút không còn hiện dialog):
+   - Thoát Dấu hoàn toàn.
+   - Accessibility → **xóa** Dấu khỏi danh sách → **thêm lại** binary đang chạy → bật.
+   - Mở lại app → **Thử lại quyền…** / **Mở Cài đặt hệ thống…**.
+4. **Mỗi lần rebuild ad-hoc / đổi path / đổi chữ ký**, TCC có thể coi binary là app khác — thường phải lặp bước 3. (Giả thuyết identity ad-hoc: **plausible** khi dev; không phải mọi máy đều tái hiện giống nhau.)
 
 Script **không** ghi TCC database.
 
@@ -168,7 +180,7 @@ Script **không** ghi TCC database.
 | **Cmd/Ctrl/Option+Delete** + navigation | Boundary app-level: reset compose + forward shortcut/key |
 | **EN / passthrough** | Fail-open: không kẹt callback; original key đi qua |
 | **Menu VI/EN + tap status** | Phản ánh **trạng thái tap thật** (`eventTapRunning` / degraded/stopped), không báo “đang chạy” khi tap đã fail |
-| **Badge "VI"** | Chỉ hiện khi **thật sự gõ được**: AX trusted **và** tap running **và** *quyền post-event đã cấp* **và** không bị input-source block **và** VI đang bật. Thiếu quyền post-event là cổng TCC **riêng** với Accessibility — trước đây không được xét nên badge báo "VI" trong khi mọi phím pass-through. Nay trạng thái đó ra `.setup`, onboarding không auto-close, CTA gọi được `CGRequestPostEventAccess` một lần |
+| **Badge "VI"** | Chỉ hiện khi **thật sự gõ được**: AX trusted **và** tap running **và** *quyền post-event đã cấp* **và** không bị input-source block **và** VI đang bật. Thiếu post-event → badge **EN** / `.setup` (không nói dối là đang gõ). Ý định VI/EN (toggle / ⌘⇧) vẫn hiện trong **tooltip**, **a11y label**, **subtitle menu** (`ý định VI` / `ý định EN`) và công tắc header. Onboarding: mỗi lần bấm CTA có thể gọi lại `CGRequestPostEventAccess`; sau lần 1 vẫn deny thì copy hướng dẫn xóa/thêm lại Accessibility |
 
 ### TG-00 fail-open (code đã land; live soak **chưa** chạy)
 

@@ -248,6 +248,9 @@ final class InjectionProfileTests: XCTestCase {
         return (store, defaults, suiteName)
     }
 
+    /// Sample shipped TOML fixture. Delay values are deliberately non-zero so
+    /// resolver/session wiring is distinguishable from the zero-delay default
+    /// (the real shipped recipe lives in `Resources/profiles.toml`).
     private let sampleShipped = """
     [default]
     enabled = true
@@ -412,7 +415,7 @@ final class InjectionProfileTests: XCTestCase {
 
     // MARK: - FocusChangeObserver
 
-    func testFocusChangeObserverInvalidatesAndNotifies() {
+    func testFocusChangeObserverSeedsCacheAndNotifies() {
         let front = FakeFrontmost()
         front.bundleId = "com.a"
         let context = AppContextResolver(
@@ -429,9 +432,72 @@ final class InjectionProfileTests: XCTestCase {
         }
 
         observer.simulateActivation(bundleId: "com.b")
-        XCTAssertFalse(context.hasValidCache)
+        // Activation seeds the cache from the notification id (no provider re-query required).
+        XCTAssertTrue(context.hasValidCache)
+        XCTAssertEqual(context.current.bundleId, "com.b")
         XCTAssertEqual(seen.count, 1)
         XCTAssertEqual(seen[0].0, "com.a")
         XCTAssertEqual(seen[0].1, "com.b")
+    }
+
+    /// Terminal shipped profile must resolve to backspaceSlow + TOML delays, and the
+    /// session must receive a non-nil bundle id when context has an app (profile wiring).
+    func testTerminalProfileAppliesToSessionWithBundleId() {
+        let (store, defaults, suite) = makeStore(shipped: sampleShipped)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let front = FakeFrontmost()
+        front.bundleId = "com.apple.Terminal"
+        front.appName = "Terminal"
+        let context = AppContextResolver(
+            frontmostProvider: front,
+            roleProvider: StubAXRoleProvider()
+        )
+        let snapshot = context.refresh()
+        XCTAssertEqual(snapshot.bundleId, "com.apple.Terminal")
+
+        let resolver = InjectionProfileResolver(store: store)
+        let resolved = resolver.resolve(context: snapshot)
+        XCTAssertEqual(resolved.source, .shippedBundle)
+        XCTAssertEqual(resolved.injectionMethod, .backspaceSlow)
+        XCTAssertEqual(resolved.delays.backspaceUs, 1000)
+        XCTAssertEqual(resolved.delays.settleUs, 3000)
+        XCTAssertEqual(resolved.delays.textUs, 1000)
+
+        // Mirror AppDelegate.refreshProfileCache: pass method/delays/bundle from resolve.
+        let session = TypingSession()
+        session.applyRuntimeSettings(
+            typingEnabled: resolved.typingEnabled,
+            injectionMethod: resolved.effectiveInjectionMethod,
+            delays: resolved.delays,
+            engineMethod: DauMethod_Telex,
+            frontmostBundleId: snapshot.bundleId
+        )
+        XCTAssertEqual(session.currentInjectionMethod(), .backspaceSlow)
+        XCTAssertEqual(session.currentDelays().backspaceUs, 1000)
+        XCTAssertEqual(session.currentDelays().settleUs, 3000)
+        XCTAssertEqual(session.currentDelays().textUs, 1000)
+        XCTAssertEqual(session.currentFrontmostBundleId(), "com.apple.Terminal")
+        XCTAssertNotNil(session.currentFrontmostBundleId())
+    }
+
+    func testUpdateFrontmostSeedsCacheWithoutProvider() {
+        let front = FakeFrontmost()
+        front.bundleId = "com.old"
+        let context = AppContextResolver(
+            frontmostProvider: front,
+            roleProvider: StubAXRoleProvider()
+        )
+        _ = context.refresh()
+        XCTAssertEqual(front.callCount, 1)
+
+        let seeded = context.updateFrontmost(bundleId: "com.apple.Terminal", appName: "Terminal")
+        XCTAssertEqual(seeded.bundleId, "com.apple.Terminal")
+        XCTAssertEqual(seeded.appName, "Terminal")
+        XCTAssertTrue(context.hasValidCache)
+        // updateFrontmost must not re-query the workspace provider.
+        XCTAssertEqual(front.callCount, 1)
+        XCTAssertEqual(context.current.bundleId, "com.apple.Terminal")
+        XCTAssertEqual(front.callCount, 1)
     }
 }

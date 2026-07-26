@@ -48,11 +48,12 @@ final class FocusChangeObserver {
     }
 
     /// Test / manual entry: simulate an app activation by bundle id.
-    /// Caller should update the frontmost provider before calling when role/bundle must refresh.
+    /// Seeds the context cache so profile resolve sees `bundleId` without a provider round-trip.
     func simulateActivation(bundleId: String?) {
         // Prefer last notified id; fall back to cache when `start()` was not used (unit tests).
         let previous = lastBundleId ?? contextResolver.current.bundleId
-        contextResolver.invalidate()
+        // Seed from the simulated id (authoritative for this event). Not keyboard hot path.
+        contextResolver.updateFrontmost(bundleId: bundleId, appName: nil)
         lastBundleId = bundleId
         onFocusChange?(previous, bundleId)
     }
@@ -60,10 +61,13 @@ final class FocusChangeObserver {
     private func handleActivation(_ notification: Notification) {
         let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
         let newId = app?.bundleIdentifier
+        let newName = app?.localizedName
         let previous = lastBundleId
 
-        // Always invalidate so the next hot-path read re-queries frontmost/role.
-        contextResolver.invalidate()
+        // Seed cache from the activation notification (authoritative for this event).
+        // Do not rely on a second frontmost query that can lag/nil after app switch.
+        // Not keyboard hot path — resolve here, hot path only reads the cache.
+        contextResolver.updateFrontmost(bundleId: newId, appName: newName)
         lastBundleId = newId
         onFocusChange?(previous, newId)
     }

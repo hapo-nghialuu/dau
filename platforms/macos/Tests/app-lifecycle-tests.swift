@@ -200,6 +200,8 @@ final class AppLifecycleTests: XCTestCase {
         XCTAssertFalse(SyntheticPostAccess.isGranted)
         XCTAssertEqual(calls, 1)
         SyntheticPostAccess.resetToDefault()
+        // UI re-prompt tracking resets with the cache.
+        XCTAssertFalse(SyntheticPostAccess.didRequestThisProcess)
     }
 
     // MARK: - Toggle hotkey recovery (AX late / restart / wake)

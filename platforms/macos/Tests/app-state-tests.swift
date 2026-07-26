@@ -40,7 +40,17 @@ final class AppStateTests: XCTestCase {
         state.typingEnabled = true
         XCTAssertEqual(state.menuBarIconState, .setup)
         XCTAssertFalse(state.isReadyToType)
+        // Badge must stay EN (never claim VI while inject is impossible).
         XCTAssertEqual(state.menuBarTitle, "EN")
+        // Intent still visible in tooltip / menu subtitle while setup incomplete.
+        XCTAssertTrue(state.menuBarToolTip.contains("ý định VI"))
+        XCTAssertTrue(state.menuBarAccessibilityLabel.contains("ý định VI"))
+        XCTAssertTrue(state.menuHeaderSubtitle.contains("ý định VI"))
+
+        state.typingEnabled = false
+        XCTAssertEqual(state.menuBarTitle, "EN")
+        XCTAssertTrue(state.menuBarToolTip.contains("ý định EN"))
+        XCTAssertTrue(state.menuHeaderSubtitle.contains("ý định EN"))
     }
 
     func testIconStateActiveVI() {
@@ -126,9 +136,12 @@ final class AppStateTests: XCTestCase {
         let state = AppState()
         state.accessibilityTrusted = false
         state.eventTapRunning = false
+        state.typingEnabled = true
         XCTAssertTrue(state.menuBarAccessibilityLabel.contains("chưa sẵn sàng"))
+        XCTAssertTrue(state.menuBarAccessibilityLabel.contains("ý định VI"))
         XCTAssertTrue(state.menuBarAccessibilityLabel.contains(state.toggleShortcutDisplay))
         XCTAssertTrue(state.menuBarToolTip.contains("Accessibility"))
+        XCTAssertTrue(state.menuBarToolTip.contains("ý định VI"))
         XCTAssertTrue(state.menuBarToolTip.contains(state.toggleShortcutDisplay))
     }
 
@@ -136,8 +149,10 @@ final class AppStateTests: XCTestCase {
         let state = AppState()
         state.accessibilityTrusted = true
         state.eventTapRunning = false
+        state.typingEnabled = true
         XCTAssertEqual(state.menuBarIconState, .setup)
         XCTAssertTrue(state.menuBarAccessibilityLabel.contains("chưa sẵn sàng"))
+        XCTAssertTrue(state.menuBarAccessibilityLabel.contains("ý định VI"))
         XCTAssertTrue(state.menuBarToolTip.contains("event tap") || state.menuBarToolTip.contains("chưa chạy"))
         XCTAssertTrue(state.menuBarToolTip.contains(state.toggleShortcutDisplay))
     }
@@ -146,9 +161,15 @@ final class AppStateTests: XCTestCase {
         let state = AppState()
         makeTrustedRunning(state: state)
         state.postEventAccessGranted = false
+        state.typingEnabled = true
         XCTAssertTrue(state.menuBarToolTip.contains("quyền gửi sự kiện"))
+        XCTAssertTrue(state.menuBarToolTip.contains("ý định VI"))
         XCTAssertTrue(state.menuBarAccessibilityLabel.contains("quyền gửi sự kiện"))
+        XCTAssertTrue(state.menuBarAccessibilityLabel.contains("ý định VI"))
         XCTAssertTrue(state.accessibilityMenuLabel.contains("thiếu quyền gửi sự kiện"))
+        // Still never claim active VI on the badge.
+        XCTAssertEqual(state.menuBarTitle, "EN")
+        XCTAssertNotEqual(state.menuBarIconState, .active)
     }
 
     func testToolTipAndAccessibilityForVI() {
@@ -193,12 +214,28 @@ final class AppStateTests: XCTestCase {
 
     func testMenuHeaderSubtitleIncludesMethodAndShortcut() {
         let state = AppState()
+        makeTrustedRunning(state: state)
+        state.typingEnabled = true
         state.engineMethod = .telex
+        // Ready: no intent suffix (badge/title already convey VI/EN).
         XCTAssertEqual(state.menuHeaderSubtitle, "Telex · \(state.toggleShortcutDisplay)")
         state.engineMethod = .vni
         XCTAssertEqual(state.menuHeaderSubtitle, "VNI · \(state.toggleShortcutDisplay)")
         XCTAssertEqual(state.toggleHotkey, .default)
         XCTAssertEqual(state.toggleShortcutDisplay, "⇧⌘E")
+
+        // Not ready: surface intent so toggle is not invisible while badge stays EN.
+        state.postEventAccessGranted = false
+        state.typingEnabled = true
+        XCTAssertEqual(
+            state.menuHeaderSubtitle,
+            "VNI · \(state.toggleShortcutDisplay) · ý định VI"
+        )
+        state.typingEnabled = false
+        XCTAssertEqual(
+            state.menuHeaderSubtitle,
+            "VNI · \(state.toggleShortcutDisplay) · ý định EN"
+        )
     }
 
     func testAccessibilityMenuLabelWhenUntrusted() {
@@ -293,6 +330,7 @@ final class AppStateTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         let state = AppState(defaults: defaults)
+        makeTrustedRunning(state: state)
         state.engineMethod = .telex
         XCTAssertEqual(state.menuHeaderSubtitle, "Telex · \(state.toggleShortcutDisplay)")
         defaults.removePersistentDomain(forName: suite)

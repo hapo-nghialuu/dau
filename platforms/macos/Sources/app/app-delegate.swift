@@ -189,7 +189,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             typingEnabled: enabled,
             injectionMethod: method,
             delays: delays,
-            engineMethod: engine
+            engineMethod: engine,
+            frontmostBundleId: snapshot.bundleId
         )
     }
 

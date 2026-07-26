@@ -402,6 +402,32 @@ final class TypingSessionTests: XCTestCase {
         XCTAssertEqual(session.currentFrontmostBundleId(), "com.apple.Terminal")
     }
 
+    /// Regression: omitting frontmostBundleId must not be the production path.
+    /// When context has an app, applyRuntimeSettings must keep a non-nil bundle id.
+    func testApplyRuntimeSettingsKeepsBundleIdFromContext() {
+        let bundleId: String? = "com.apple.Terminal"
+        XCTAssertNotNil(bundleId)
+        session.applyRuntimeSettings(
+            typingEnabled: true,
+            injectionMethod: .backspaceSlow,
+            delays: DelayPreset(backspaceUs: 1000, settleUs: 3000, textUs: 1000),
+            engineMethod: DauMethod_Telex,
+            frontmostBundleId: bundleId
+        )
+        XCTAssertEqual(session.currentFrontmostBundleId(), "com.apple.Terminal")
+        XCTAssertEqual(session.currentInjectionMethod(), .backspaceSlow)
+        XCTAssertEqual(session.currentDelays().settleUs, 3000)
+
+        // Default parameter clears metadata — documents the AppDelegate wiring bug class.
+        session.applyRuntimeSettings(
+            typingEnabled: true,
+            injectionMethod: .backspaceFast,
+            delays: .zero,
+            engineMethod: DauMethod_Telex
+        )
+        XCTAssertNil(session.currentFrontmostBundleId())
+    }
+
     /// Declared-only stub methods are rewritten at apply time (never silent stub delivery).
     func testStubInjectionMethodFallsBackAtApply() {
         session.applyRuntimeSettings(

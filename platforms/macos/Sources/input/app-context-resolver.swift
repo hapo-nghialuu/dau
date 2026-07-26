@@ -136,6 +136,24 @@ final class AppContextResolver {
         return cached
     }
 
+    /// Seed cache from a known activation (focus-change notification).
+    /// Prefer this over bare `invalidate()` so profile resolve does not depend on a
+    /// second frontmost query that can lag or return nil after app switch.
+    @discardableResult
+    func updateFrontmost(bundleId: String?, appName: String? = nil) -> AppContextSnapshot {
+        generation &+= 1
+        // Role stays optional; stub provider returns nil without AX work.
+        let role = roleProvider.focusedRoleCategory()
+        cached = AppContextSnapshot(
+            bundleId: bundleId,
+            appName: appName,
+            role: role,
+            generation: generation
+        )
+        isValid = true
+        return cached
+    }
+
     /// Mark cache stale. Next `current` / explicit `refresh` re-queries providers.
     func invalidate() {
         isValid = false
