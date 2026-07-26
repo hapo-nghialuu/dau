@@ -1,5 +1,6 @@
 // Dấu macOS — compose / provisional state machine over DauCoreBridge + DauResultMapper.
 // WP-02 + TG-04: per-character Backspace via core; Forward Delete pass-through + reset.
+// Core returns display deltas (`DauDeltaResult`); mapper applies them to provisional.
 
 import Foundation
 
@@ -15,7 +16,7 @@ enum PipelineKeyKind: Equatable {
     case boundary  // navigation / modifier / other — reset compose, forward
 }
 
-/// Owns provisional compose state and routes keys through core + §2.4 mapping.
+/// Owns provisional compose state and routes keys through core + delta mapping.
 final class MacKeyPipeline {
     private let bridge: DauCoreBridge
 
@@ -76,7 +77,6 @@ final class MacKeyPipeline {
 
         switch core.action {
         case DauAction_UpdatePreedit:
-            // Suffix delta (usually backspace=1, text="") via TG-02 mapper.
             return DauResultMapper.map(
                 core,
                 provisionalText: &provisionalText,

@@ -1,0 +1,89 @@
+# NOTICE — third-party attributions for Dấu
+
+Dấu is primarily licensed under the MIT License (see `LICENSE`).
+
+This project also includes code **derived from Gõ Nhanh**, which is licensed
+under the BSD 3-Clause License. Those portions are retained under BSD-3-Clause
+as required by that license. The combined work therefore contains both MIT and
+BSD-3-Clause licensed material.
+
+## Portions derived from Gõ Nhanh
+
+Source project: [Gõ Nhanh](https://github.com/gonhanh/gonhanh) (and related
+distributions under the same copyright).
+
+Copyright (c) 2025, Gõ Nhanh Contributors  
+License: BSD 3-Clause (“BSD-3-Clause”)
+
+### What was taken
+
+Only the **host-facing FFI result contract shape** was ported conceptually:
+
+- Returning a **display delta** (`backspace` + insert code points + count)
+  instead of the full preedit string for each key event.
+- The structural idea of `Result { chars, action, backspace, count, … }` as used
+  in Gõ Nhanh `core/src/engine/mod.rs`.
+
+In addition, the **macOS synthetic-injection strategy** was ported conceptually
+from Gõ Nhanh `platforms/macos/RustBridge.swift`:
+
+- Posting synthetic Backspace/Unicode events with a **private event source**
+  (`CGEventSource(stateID: .privateState)`) at the **session tap location**
+  (`.cgSessionEventTap`) so synthetic events cannot race physical keys upstream,
+  reusing one event source across posts instead of creating one per event.
+- The list of **terminal-class bundle identifiers** treated as slow-render
+  injection targets. (Gõ Nhanh's large slow-delay recipe itself was **not**
+  adopted: Dấu's bounded EventTap callback requires zero-delay injects, and
+  session-tap posting already guarantees ordering.)
+
+### What was *not* taken
+
+Dấu does **not** port Gõ Nhanh’s Vietnamese engine rules, Telex doubles tables,
+validation pipeline, or other transformation logic. Vietnamese composition rules
+in Dấu remain original MIT-licensed work.
+
+### Files in this repository that contain derived material / attribution
+
+- `core/src/engine/mod.rs` — `DisplayDelta`, `display_delta` (contract + docs)
+- `core/src/ffi.rs` — `DauDeltaResult` C ABI layout and docs
+- `core/include/dau_core.h` — generated C header for the delta result type
+- `platforms/macos/Sources/output/text-injector.swift` — post location/source
+  strategy and slow-batch settle for `CGEventInjectorSink` / `TextInjector`
+- `platforms/macos/Resources/profiles.toml` — terminal-class slow delay recipe
+  and bundle-id list
+
+Each of those source files carries a short header naming Gõ Nhanh and the
+BSD-3-Clause copyright notice.
+
+---
+
+## Full text of the BSD 3-Clause License (Gõ Nhanh)
+
+BSD 3-Clause License
+
+Copyright (c) 2025, Gõ Nhanh Contributors
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

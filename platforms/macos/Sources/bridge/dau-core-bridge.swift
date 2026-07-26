@@ -1,17 +1,27 @@
 // Dấu macOS — RAII wrapper around the dau-core C ABI (`Engine*`).
 // WP-02: lifecycle, process/break/escape/clear, flags, config, strategy.
-// Does not redefine DauResult / DauAction; uses types from dau_core.h via bridging header.
+// Uses `DauDeltaResult` from dau_core.h (display delta: backspace + insert).
+//
+// Delta contract layout derived from Gõ Nhanh (BSD-3-Clause,
+// Copyright (c) 2025 Gõ Nhanh Contributors). See repo root NOTICE.
 
 import Foundation
 
 /// Swift-side view of one core call after UTF-32 → `String` conversion.
+///
+/// `text` is the **insert payload only** (not full preedit). Host should delete
+/// `backspace` Unicode scalars first, then insert `text`.
 struct CoreMappedResult: Equatable {
     var action: DauAction
+    /// Unicode scalars to delete before inserting `text`.
+    var backspace: Int
+    /// Insert-only text from core `chars[0..count]`.
     var text: String
     var capitalizeNext: Bool
 
     static let empty = CoreMappedResult(
         action: DauAction_None,
+        backspace: 0,
         text: "",
         capitalizeNext: false
     )
@@ -66,8 +76,8 @@ final class DauCoreBridge {
     }
 
     /// Backspace one display Unicode scalar while composing (`dau_backspace`).
-    /// Returns `UpdatePreedit` with the new preedit (may be empty), or `None` when
-    /// the compose buffer is already empty (host should pass the physical key).
+    /// Returns `UpdatePreedit` with a delta (often backspace=1, empty insert), or
+    /// `None` when the compose buffer is already empty (host should pass the key).
     func backspace() -> CoreMappedResult {
         return Self.mapResult(dau_backspace(engineAsC))
     }
@@ -143,10 +153,10 @@ final class DauCoreBridge {
 
     // MARK: - UTF-32 helpers
 
-    /// Convert a core `DauResult` UTF-32 buffer into a Swift `String`.
-    /// Invalid scalars and out-of-range `len` are skipped/clamped (null-safe).
-    static func string(from result: DauResult) -> String {
-        let count = min(Int(result.len), Int(DAU_RESULT_MAX_CHARS))
+    /// Convert core insert payload `chars[0..count]` into a Swift `String`.
+    /// Invalid scalars and out-of-range `count` are skipped/clamped (null-safe).
+    static func string(from result: DauDeltaResult) -> String {
+        let count = min(Int(result.count), Int(DAU_DELTA_MAX_CHARS))
         guard count > 0 else { return "" }
 
         var copy = result
@@ -163,9 +173,10 @@ final class DauCoreBridge {
         }
     }
 
-    static func mapResult(_ result: DauResult) -> CoreMappedResult {
+    static func mapResult(_ result: DauDeltaResult) -> CoreMappedResult {
         CoreMappedResult(
             action: result.action,
+            backspace: Int(result.backspace),
             text: string(from: result),
             capitalizeNext: result.capitalize_next
         )

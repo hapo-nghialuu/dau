@@ -1,4 +1,20 @@
 //! Vietnamese input engine: Telex / VNI composition pipeline.
+//!
+//! ## Host display delta (port of Gõ Nhanh contract shape)
+//!
+//! [`DisplayDelta`] / [`display_delta`] implement the *host-facing* contract of
+//! “delete N scalars, then insert these code points” instead of returning the
+//! full preedit string. The algorithm is common-prefix based.
+//!
+//! Portions of this delta contract are derived from **Gõ Nhanh**
+//! (`core/src/engine/mod.rs` `Result { chars, action, backspace, count, flags }`):
+//!
+//! Copyright (c) 2025, Gõ Nhanh Contributors  
+//! SPDX-License-Identifier: BSD-3-Clause  
+//! See the root `NOTICE` file for the full license text.
+//!
+//! Vietnamese Telex/VNI rules in this module and submodules are original Dấu
+//! (MIT) work and are **not** ported from Gõ Nhanh.
 
 mod buffer;
 // Explicit path avoids ambiguity when leftover `syllable.rs` / `syllable/` coexist.
@@ -21,6 +37,59 @@ pub use ux::BreakOutput;
 pub enum Method {
     Telex,
     Vni,
+}
+
+/// Host-facing display delta: delete `backspace` Unicode scalars, then insert
+/// the characters in `insert`.
+///
+/// Derived from the Gõ Nhanh FFI `Result` contract shape (BSD-3-Clause,
+/// Copyright (c) 2025 Gõ Nhanh Contributors). See root `NOTICE`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DisplayDelta {
+    /// Number of Unicode scalars (Rust `char`s) the host should delete before inserting.
+    pub backspace: u8,
+    /// Code points to insert after the backspaces (not the full preedit).
+    pub insert: String,
+}
+
+impl DisplayDelta {
+    /// No host mutation.
+    #[inline]
+    pub fn none() -> Self {
+        Self {
+            backspace: 0,
+            insert: String::new(),
+        }
+    }
+
+    /// Whether the host can leave the document unchanged.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.backspace == 0 && self.insert.is_empty()
+    }
+}
+
+/// Compute a minimal common-prefix delta from the host-visible `old` display to `new`.
+///
+/// - `backspace` = number of trailing scalars in `old` after the shared prefix
+/// - `insert` = remaining scalars of `new` after the shared prefix
+///
+/// Both strings are measured in Unicode scalars (`char`), matching IME backspace
+/// units used by the macOS/Linux hosts.
+///
+/// Contract shape derived from Gõ Nhanh (BSD-3-Clause, Copyright (c) 2025
+/// Gõ Nhanh Contributors). Implementation is original to Dấu.
+pub fn display_delta(old: &str, new: &str) -> DisplayDelta {
+    let old_chars: Vec<char> = old.chars().collect();
+    let new_chars: Vec<char> = new.chars().collect();
+    let mut common = 0usize;
+    let limit = old_chars.len().min(new_chars.len());
+    while common < limit && old_chars[common] == new_chars[common] {
+        common += 1;
+    }
+    let backspace = (old_chars.len() - common).min(u8::MAX as usize) as u8;
+    let insert: String = new_chars[common..].iter().collect();
+    DisplayDelta { backspace, insert }
 }
 
 /// Core composing engine for one word at a time.

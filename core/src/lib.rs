@@ -5,7 +5,7 @@ mod engine;
 pub mod ffi;
 
 pub use config::{Config, Strategy};
-pub use engine::{BreakOutput, Engine, Method};
+pub use engine::{display_delta, BreakOutput, DisplayDelta, Engine, Method};
 
 /// Returns the crate version from Cargo.toml.
 pub fn version() -> &'static str {

@@ -1,6 +1,11 @@
-// Dấu macOS — map core DauResult → BridgeResult using provisional compose state.
-// WP-02 / plan §2.4. Backspace count is bridge-owned (not a core ABI field).
-// TG-02: UpdatePreedit uses minimal suffix delta; pure single-scalar append passes the original key.
+// Dấu macOS — map core DauDeltaResult → BridgeResult using provisional compose state.
+// Core already returns display delta (backspace + insert). Mapper:
+// - keeps provisional in sync by applying that delta
+// - keeps TG-02 plain single-scalar append pass-through
+// - maps Commit / Restore / None against provisional
+//
+// Delta contract derived from Gõ Nhanh (BSD-3-Clause,
+// Copyright (c) 2025 Gõ Nhanh Contributors). See repo root NOTICE.
 
 import Foundation
 
@@ -23,27 +28,28 @@ struct BridgeResult: Equatable {
     )
 }
 
-/// Pure mapping of core action + text against provisional state (§2.4 table).
+/// Pure mapping of core delta + action against provisional state.
 enum DauResultMapper {
     /// Map one core outcome and update provisional state in place.
     ///
     /// - Parameters:
     ///   - action: `DauAction` from core (imported via bridging header).
-    ///   - text: UTF-32 result already converted to `String`.
+    ///   - backspace: core delete count (Unicode scalars).
+    ///   - text: core **insert-only** payload (not full preedit).
     ///   - capitalizeNext: core flag; stored on `BridgeResult` only.
     ///   - provisionalText: last injected compose text (not yet committed).
     ///   - provisionalLength: `provisionalText.unicodeScalars.count`.
     /// - Returns: `BridgeResult` for the injector / event-tap consumer.
     ///
-    /// ## UpdatePreedit contract (TG-02)
-    /// - **Plain append** (`new == old + one Unicode scalar`): update provisional, return
-    ///   `backspace = 0`, `text = ""`, `consumeOriginal = false` so the physical key reaches
-    ///   the app once (no synthetic Backspace N + full rewrite).
-    /// - **Transform** (tone/mark/shape changes earlier chars): delete only the changed
-    ///   suffix of provisional (`oldLen - commonPrefix`), inject only the new suffix.
-    /// - Multi-scalar pure append (rare): `backspace = 0`, inject new suffix, consume key.
+    /// ## UpdatePreedit contract (TG-02, core-owned delta)
+    /// - **Plain append** (core `backspace == 0`, single-scalar insert that grows
+    ///   provisional by one): update provisional, return `backspace = 0`,
+    ///   `text = ""`, `consumeOriginal = false` so the physical key reaches the app.
+    /// - **Transform / multi-scalar insert**: forward core `backspace` + `text`,
+    ///   consume the key, update provisional by applying the same delta.
     static func map(
         action: DauAction,
+        backspace: Int,
         text: String,
         capitalizeNext: Bool = false,
         provisionalText: inout String,
@@ -74,6 +80,7 @@ enum DauResultMapper {
 
         case DauAction_UpdatePreedit:
             return mapUpdatePreedit(
+                backspace: backspace,
                 text: text,
                 capitalizeNext: capitalizeNext,
                 provisionalText: &provisionalText,
@@ -81,12 +88,10 @@ enum DauResultMapper {
             )
 
         case DauAction_Commit:
-            // If committed text equals what is already on screen, skip delete/retype.
-            let unchanged = text == provisionalText
-            let displayedLength = provisionalText.unicodeScalars.count
+            // Core already computed delta from previous composing display → commit text.
             let result = BridgeResult(
-                backspace: unchanged ? 0 : displayedLength,
-                text: unchanged ? "" : text,
+                backspace: max(0, backspace),
+                text: text,
                 consumeOriginal: false, // break key is always forwarded after inject
                 capitalizeNext: capitalizeNext
             )
@@ -95,17 +100,23 @@ enum DauResultMapper {
             return result
 
         case DauAction_Restore:
-            // Swallow Esc when there was compose or raw text to inject; empty Esc forwards.
+            // Apply core delta; keep provisional in sync with core pass-through buffer
+            // so subsequent keys under the delta contract stay correct.
+            let applied = applyDelta(
+                to: provisionalText,
+                backspace: backspace,
+                insert: text
+            )
             let displayedLength = provisionalText.unicodeScalars.count
-            let hadCompose = displayedLength > 0 || !text.isEmpty
+            let hadCompose = displayedLength > 0 || !text.isEmpty || backspace > 0
             let result = BridgeResult(
-                backspace: displayedLength,
+                backspace: max(0, backspace),
                 text: text,
                 consumeOriginal: hadCompose,
                 capitalizeNext: capitalizeNext
             )
-            provisionalText = ""
-            provisionalLength = 0
+            provisionalText = applied
+            provisionalLength = applied.unicodeScalars.count
             return result
 
         default:
@@ -126,6 +137,7 @@ enum DauResultMapper {
     ) -> BridgeResult {
         map(
             action: core.action,
+            backspace: core.backspace,
             text: core.text,
             capitalizeNext: core.capitalizeNext,
             provisionalText: &provisionalText,
@@ -133,22 +145,23 @@ enum DauResultMapper {
         )
     }
 
-    // MARK: - UpdatePreedit delta
+    // MARK: - UpdatePreedit
 
     private static func mapUpdatePreedit(
+        backspace: Int,
         text: String,
         capitalizeNext: Bool,
         provisionalText: inout String,
         provisionalLength: inout Int
     ) -> BridgeResult {
-        let oldText = provisionalText
-        let oldLen = oldText.unicodeScalars.count
-        let newLen = text.unicodeScalars.count
-        let common = commonPrefixScalarCount(oldText, text)
+        let oldLen = provisionalText.unicodeScalars.count
+        let insertCount = text.unicodeScalars.count
+        let newText = applyDelta(to: provisionalText, backspace: backspace, insert: text)
+        let newLen = newText.unicodeScalars.count
 
         // Pure single-scalar append: pass original key; document gets the physical char once.
-        if newLen == oldLen + 1, common == oldLen {
-            provisionalText = text
+        if backspace == 0, insertCount == 1, newLen == oldLen + 1 {
+            provisionalText = newText
             provisionalLength = newLen
             return BridgeResult(
                 backspace: 0,
@@ -159,55 +172,51 @@ enum DauResultMapper {
         }
 
         // Multi-scalar pure append (core grew display without rewriting prefix).
-        if newLen > oldLen, common == oldLen {
-            let suffix = scalarSuffix(text, droppingFirst: common)
-            provisionalText = text
+        if backspace == 0, insertCount > 0 {
+            provisionalText = newText
             provisionalLength = newLen
             return BridgeResult(
                 backspace: 0,
-                text: suffix,
+                text: text,
                 consumeOriginal: true,
                 capitalizeNext: capitalizeNext
             )
         }
 
-        // Transform / rewrite: only replace the changed suffix (not full provisional wipe).
-        let backspace = oldLen - common
-        let suffix = scalarSuffix(text, droppingFirst: common)
-        provisionalText = text
+        // No-op display (e.g. absorbed key): still consume; no inject.
+        if backspace == 0, insertCount == 0 {
+            provisionalText = newText
+            provisionalLength = newLen
+            return BridgeResult(
+                backspace: 0,
+                text: "",
+                consumeOriginal: true,
+                capitalizeNext: capitalizeNext
+            )
+        }
+
+        // Transform / rewrite: forward core delta.
+        provisionalText = newText
         provisionalLength = newLen
         return BridgeResult(
-            backspace: backspace,
-            text: suffix,
+            backspace: max(0, backspace),
+            text: text,
             consumeOriginal: true,
             capitalizeNext: capitalizeNext
         )
     }
 
-    /// Count of leading Unicode scalars shared by `a` and `b`.
-    static func commonPrefixScalarCount(_ a: String, _ b: String) -> Int {
-        let aScalars = a.unicodeScalars
-        let bScalars = b.unicodeScalars
-        var ai = aScalars.startIndex
-        var bi = bScalars.startIndex
-        var count = 0
-        while ai < aScalars.endIndex, bi < bScalars.endIndex, aScalars[ai] == bScalars[bi] {
-            count += 1
-            ai = aScalars.index(after: ai)
-            bi = bScalars.index(after: bi)
+    /// Apply host delta: delete `backspace` trailing scalars, then append `insert`.
+    static func applyDelta(to base: String, backspace: Int, insert: String) -> String {
+        var scalars = Array(base.unicodeScalars)
+        let drop = min(max(0, backspace), scalars.count)
+        if drop > 0 {
+            scalars.removeLast(drop)
         }
-        return count
-    }
-
-    /// Drop the first `n` Unicode scalars of `s` and return the remainder as `String`.
-    static func scalarSuffix(_ s: String, droppingFirst n: Int) -> String {
-        if n <= 0 { return s }
-        let scalars = s.unicodeScalars
-        if n >= scalars.count { return "" }
-        var idx = scalars.startIndex
-        for _ in 0..<n {
-            idx = scalars.index(after: idx)
+        var view = String.UnicodeScalarView(scalars)
+        for s in insert.unicodeScalars {
+            view.append(s)
         }
-        return String(String.UnicodeScalarView(scalars[idx...]))
+        return String(view)
     }
 }

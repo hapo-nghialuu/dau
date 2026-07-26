@@ -236,8 +236,8 @@ final class MacKeyPipelineTests: XCTestCase {
             XCTAssertEqual(r.backspace, 0)
             XCTAssertEqual(before, "hello")
         } else {
-            // Changed path: rewrite provisional with restored/committed text.
-            XCTAssertEqual(r.backspace, before.unicodeScalars.count)
+            // Changed path: core common-prefix delta (not necessarily full wipe).
+            XCTAssertGreaterThan(r.backspace, 0)
         }
         XCTAssertEqual(pipeline.provisionalLength, 0)
     }
@@ -262,10 +262,13 @@ final class MacKeyPipelineTests: XCTestCase {
         _ = typeASCII("tieengs")
         XCTAssertEqual(pipeline.provisionalText, "tiếng")
         let r = pipeline.handleEscape()
-        XCTAssertEqual(r.backspace, "tiếng".unicodeScalars.count)
-        XCTAssertEqual(r.text, "tieengs")
+        // Core common-prefix delta: "tiếng" → "tieengs" (shared "ti").
+        XCTAssertEqual(r.backspace, 3)
+        XCTAssertEqual(r.text, "eengs")
         XCTAssertTrue(r.consumeOriginal)
-        XCTAssertEqual(pipeline.provisionalLength, 0)
+        // Keep provisional in sync with core pass-through buffer (delta contract).
+        XCTAssertEqual(pipeline.provisionalText, "tieengs")
+        XCTAssertEqual(pipeline.provisionalLength, "tieengs".unicodeScalars.count)
     }
 
     func testEscapeWithEmptyComposeForwards() {

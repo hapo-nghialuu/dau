@@ -11,10 +11,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-// Maximum UTF-32 code points returned in a single [`DauResult`].
+// Maximum UTF-32 code points returned in a single [`DauDeltaResult`].
 //
-// Kept as a literal `64` in [`DauResult::chars`] so cbindgen emits a valid C array size.
-#define DAU_RESULT_MAX_CHARS 64
+// Kept as a literal `64` in [`DauDeltaResult::chars`] so cbindgen emits a valid C array size.
+#define DAU_DELTA_MAX_CHARS 64
 
 // Suggested action for the host IME bridge after a key event.
 typedef enum DauAction {
@@ -41,16 +41,27 @@ typedef enum DauStrategy {
 // Core composing engine for one word at a time.
 typedef struct Engine Engine;
 
-// Result of one key / break / escape operation.
+// Result of one key / break / escape / backspace operation as a **display delta**.
 //
-// C++ reads `chars[0..len]` as UTF-32 code points.
-typedef struct DauResult {
+// Host must:
+// 1. Delete `backspace` Unicode scalars before the cursor (or from the preedit surface)
+// 2. Insert `chars[0..count]` (UTF-32 code points)
+//
+// `chars` is **only** the insert payload — never the full preedit string.
+// This type replaced `DauResult` (full preedit) so unupdated consumers fail to compile.
+//
+// Layout derived from Gõ Nhanh `Result` (BSD-3-Clause, Copyright (c) 2025
+// Gõ Nhanh Contributors). See root `NOTICE`.
+typedef struct DauDeltaResult {
   enum DauAction action;
-  // UTF-32 code points (valid prefix length is `len`, max 64).
+  // UTF-32 code points to insert (valid prefix length is `count`, max 64).
   uint32_t chars[64];
-  uint32_t len;
+  // Number of code points in `chars` to insert (0..=64).
+  uint8_t count;
+  // Number of Unicode scalars to delete before inserting.
+  uint8_t backspace;
   bool capitalize_next;
-} DauResult;
+} DauDeltaResult;
 
 #ifdef __cplusplus
 extern "C" {
@@ -58,14 +69,14 @@ extern "C" {
 
 // Backspace one user-visible Unicode scalar while composing.
 //
-// Returns [`DauAction::UpdatePreedit`] with the new preedit text when a scalar
-// was removed (including empty text after deleting the last scalar). Returns
+// Returns [`DauAction::UpdatePreedit`] with a display delta when a scalar was
+// removed (typically `backspace == 1`, `count == 0`). Returns
 // [`DauAction::None`] when the compose buffer is already empty (host may pass
 // the physical Backspace through) or when the engine is null / disabled.
 //
 // # Safety
 // - `engine` must be null or a valid live pointer from [`dau_engine_new`].
-struct DauResult dau_backspace(struct Engine *engine);
+struct DauDeltaResult dau_backspace(struct Engine *engine);
 
 // Clear the composing word.
 //
@@ -85,11 +96,12 @@ void dau_engine_free(struct Engine *engine);
 // Create a new engine. Caller must free with [`dau_engine_free`].
 struct Engine *dau_engine_new(enum DauMethod method);
 
-// ESC: restore raw keystrokes. Returns [`DauAction::Restore`].
+// ESC: restore raw keystrokes. Returns [`DauAction::Restore`] with a delta
+// from the previous composing display to the raw keystroke string.
 //
 // # Safety
 // - `engine` must be null or a valid live pointer from [`dau_engine_new`].
-struct DauResult dau_escape(struct Engine *engine);
+struct DauDeltaResult dau_escape(struct Engine *engine);
 
 // Load config from shipped then user TOML paths (UTF-8 C strings; null = skip that file).
 //
@@ -104,20 +116,22 @@ bool dau_load_config(struct Engine *engine, const char *shipped_path, const char
 
 // End the current word with break character `brk` (UTF-32).
 //
-// Returns [`DauAction::Commit`] with committed text (break char not included).
+// Returns [`DauAction::Commit`] with a delta from the previous composing display
+// to the committed text (break char not included). When commit equals the
+// on-screen compose, `backspace == 0` and `count == 0`.
 //
 // # Safety
 // - `engine` must be null or a valid live pointer from [`dau_engine_new`].
-struct DauResult dau_on_break(struct Engine *engine, uint32_t brk);
+struct DauDeltaResult dau_on_break(struct Engine *engine, uint32_t brk);
 
 // Process one Unicode scalar value (`ch` is UTF-32).
 //
-// Returns [`DauAction::UpdatePreedit`] while composing, or [`DauAction::None`]
-// when the engine is disabled / null / invalid code point.
+// Returns [`DauAction::UpdatePreedit`] with a display delta while composing, or
+// [`DauAction::None`] when the engine is disabled / null / invalid code point.
 //
 // # Safety
 // - `engine` must be null or a valid live pointer from [`dau_engine_new`].
-struct DauResult dau_process_char(struct Engine *engine, uint32_t ch, bool caps);
+struct DauDeltaResult dau_process_char(struct Engine *engine, uint32_t ch, bool caps);
 
 // Enable/disable auto-capitalize after sentence ends.
 //
