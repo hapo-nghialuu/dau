@@ -14,8 +14,8 @@ cpp_compat = true
 # prefix = "Dau" would double-prefix those names, so left unset.
 
 [export]
-include = ["DauMethod", "DauAction", "DauResult", "DauStrategy", "Engine"]
-exclude = ["Method", "BreakOutput", "Strategy", "Config"]
+include = ["DauMethod", "DauAction", "DauDeltaResult", "DauStrategy", "Engine"]
+exclude = ["Method", "BreakOutput", "Strategy", "Config", "DisplayDelta"]
 
 [parse]
 parse_deps = false

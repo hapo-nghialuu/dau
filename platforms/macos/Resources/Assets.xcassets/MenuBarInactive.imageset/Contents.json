@@ -1,0 +1,8 @@
+{
+  "images" : [
+    { "filename" : "MenuBarInactive.png", "idiom" : "universal", "scale" : "1x" },
+    { "filename" : "MenuBarInactive@2x.png", "idiom" : "universal", "scale" : "2x" }
+  ],
+  "info" : { "author" : "xcode", "version" : 1 },
+  "properties" : { "template-rendering-intent" : "original" }
+}

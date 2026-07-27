@@ -6,8 +6,11 @@ plans/
 !plans/templates/
 .cafekit-backup/
 .cafekit.lock
-.claude/
+.claude
 .opencode/
+
+# OS / editor junk
+.DS_Store
 
 # Build artifacts
 /core/target/
@@ -18,3 +21,9 @@ platforms/linux/build/
 /demo/target/
 /demo/web/dau_demo.wasm
 /demo/macos/DauDemo.app/
+
+# macOS app build (local)
+platforms/macos/build/
+**/DerivedData/
+*.xcuserstate
+xcuserdata/

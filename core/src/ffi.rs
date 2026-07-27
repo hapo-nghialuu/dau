@@ -1,17 +1,29 @@
 //! C ABI surface for Fcitx5 (and other) bridges.
 //!
-//! Opaque `Engine` pointers; string results as UTF-32 code points in [`DauResult`].
+//! Opaque `Engine` pointers; key results as a **display delta**
+//! ([`DauDeltaResult`]): delete `backspace` Unicode scalars, then insert
+//! `chars[0..count]`.
+//!
+//! ## Contract origin
+//!
+//! The delta result layout (`chars` + `backspace` + `count` + action) is
+//! derived from **Gõ Nhanh** `engine::Result` (BSD-3-Clause,
+//! Copyright (c) 2025 Gõ Nhanh Contributors). See the root `NOTICE` file.
+//!
+//! Dấu keeps its own Vietnamese rules and `capitalize_next`; only the
+//! host-facing delta shape is ported. The old full-preedit `DauResult` type
+//! was removed on purpose so stale consumers fail at compile time.
 
 use crate::config::{Config, Strategy};
-use crate::engine::{Engine, Method};
+use crate::engine::{display_delta, DisplayDelta, Engine, Method};
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::path::Path;
 
-/// Maximum UTF-32 code points returned in a single [`DauResult`].
+/// Maximum UTF-32 code points returned in a single [`DauDeltaResult`].
 ///
-/// Kept as a literal `64` in [`DauResult::chars`] so cbindgen emits a valid C array size.
-pub const DAU_RESULT_MAX_CHARS: usize = 64;
+/// Kept as a literal `64` in [`DauDeltaResult::chars`] so cbindgen emits a valid C array size.
+pub const DAU_DELTA_MAX_CHARS: usize = 64;
 
 /// Input method selection for the C ABI.
 #[repr(C)]
@@ -41,40 +53,53 @@ pub enum DauAction {
     Restore = 3,
 }
 
-/// Result of one key / break / escape operation.
+/// Result of one key / break / escape / backspace operation as a **display delta**.
 ///
-/// C++ reads `chars[0..len]` as UTF-32 code points.
+/// Host must:
+/// 1. Delete `backspace` Unicode scalars before the cursor (or from the preedit surface)
+/// 2. Insert `chars[0..count]` (UTF-32 code points)
+///
+/// `chars` is **only** the insert payload — never the full preedit string.
+/// This type replaced `DauResult` (full preedit) so unupdated consumers fail to compile.
+///
+/// Layout derived from Gõ Nhanh `Result` (BSD-3-Clause, Copyright (c) 2025
+/// Gõ Nhanh Contributors). See root `NOTICE`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
-pub struct DauResult {
+pub struct DauDeltaResult {
     pub action: DauAction,
-    /// UTF-32 code points (valid prefix length is `len`, max 64).
+    /// UTF-32 code points to insert (valid prefix length is `count`, max 64).
     pub chars: [u32; 64],
-    pub len: u32,
+    /// Number of code points in `chars` to insert (0..=64).
+    pub count: u8,
+    /// Number of Unicode scalars to delete before inserting.
+    pub backspace: u8,
     pub capitalize_next: bool,
 }
 
-impl DauResult {
+impl DauDeltaResult {
     fn empty() -> Self {
         Self {
             action: DauAction::None,
             chars: [0; 64],
-            len: 0,
+            count: 0,
+            backspace: 0,
             capitalize_next: false,
         }
     }
 
-    fn from_text(action: DauAction, text: &str, capitalize_next: bool) -> Self {
+    fn from_delta(action: DauAction, delta: &DisplayDelta, capitalize_next: bool) -> Self {
         let mut chars = [0u32; 64];
-        let mut len = 0u32;
-        for (i, ch) in text.chars().take(64).enumerate() {
+        let mut count = 0u8;
+        for (i, ch) in delta.insert.chars().take(DAU_DELTA_MAX_CHARS).enumerate() {
             chars[i] = ch as u32;
-            len = (i + 1) as u32;
+            count = (i + 1) as u8;
         }
         Self {
             action,
             chars,
-            len,
+            count,
+            backspace: delta.backspace,
             capitalize_next,
         }
     }
@@ -112,67 +137,80 @@ pub unsafe extern "C" fn dau_engine_free(engine: *mut Engine) {
 
 /// Process one Unicode scalar value (`ch` is UTF-32).
 ///
-/// Returns [`DauAction::UpdatePreedit`] while composing, or [`DauAction::None`]
-/// when the engine is disabled / null / invalid code point.
+/// Returns [`DauAction::UpdatePreedit`] with a display delta while composing, or
+/// [`DauAction::None`] when the engine is disabled / null / invalid code point.
 ///
 /// # Safety
 /// - `engine` must be null or a valid live pointer from [`dau_engine_new`].
 #[no_mangle]
-pub unsafe extern "C" fn dau_process_char(engine: *mut Engine, ch: u32, caps: bool) -> DauResult {
+pub unsafe extern "C" fn dau_process_char(
+    engine: *mut Engine,
+    ch: u32,
+    caps: bool,
+) -> DauDeltaResult {
     if engine.is_null() {
-        return DauResult::empty();
+        return DauDeltaResult::empty();
     }
     // SAFETY: non-null pointer owned by caller, created by `dau_engine_new`.
     let eng = &mut *engine;
     if !eng.is_enabled() {
-        return DauResult::empty();
+        return DauDeltaResult::empty();
     }
     let Some(ch) = char::from_u32(ch) else {
-        return DauResult::empty();
+        return DauDeltaResult::empty();
     };
-    let text = eng.process_char(ch, caps);
-    DauResult::from_text(DauAction::UpdatePreedit, &text, false)
+    let old = eng.composing();
+    let new = eng.process_char(ch, caps);
+    let delta = display_delta(&old, &new);
+    DauDeltaResult::from_delta(DauAction::UpdatePreedit, &delta, false)
 }
 
 /// End the current word with break character `brk` (UTF-32).
 ///
-/// Returns [`DauAction::Commit`] with committed text (break char not included).
+/// Returns [`DauAction::Commit`] with a delta from the previous composing display
+/// to the committed text (break char not included). When commit equals the
+/// on-screen compose, `backspace == 0` and `count == 0`.
 ///
 /// # Safety
 /// - `engine` must be null or a valid live pointer from [`dau_engine_new`].
 #[no_mangle]
-pub unsafe extern "C" fn dau_on_break(engine: *mut Engine, brk: u32) -> DauResult {
+pub unsafe extern "C" fn dau_on_break(engine: *mut Engine, brk: u32) -> DauDeltaResult {
     if engine.is_null() {
-        return DauResult::empty();
+        return DauDeltaResult::empty();
     }
     // SAFETY: non-null pointer owned by caller, created by `dau_engine_new`.
     let eng = &mut *engine;
     if !eng.is_enabled() {
-        return DauResult::empty();
+        return DauDeltaResult::empty();
     }
     let Some(brk) = char::from_u32(brk) else {
-        return DauResult::empty();
+        return DauDeltaResult::empty();
     };
+    let old = eng.composing();
     let out = eng.on_break(brk);
-    DauResult::from_text(DauAction::Commit, &out.text, out.capitalize_next)
+    let delta = display_delta(&old, &out.text);
+    DauDeltaResult::from_delta(DauAction::Commit, &delta, out.capitalize_next)
 }
 
-/// ESC: restore raw keystrokes. Returns [`DauAction::Restore`].
+/// ESC: restore raw keystrokes. Returns [`DauAction::Restore`] with a delta
+/// from the previous composing display to the raw keystroke string.
 ///
 /// # Safety
 /// - `engine` must be null or a valid live pointer from [`dau_engine_new`].
 #[no_mangle]
-pub unsafe extern "C" fn dau_escape(engine: *mut Engine) -> DauResult {
+pub unsafe extern "C" fn dau_escape(engine: *mut Engine) -> DauDeltaResult {
     if engine.is_null() {
-        return DauResult::empty();
+        return DauDeltaResult::empty();
     }
     // SAFETY: non-null pointer owned by caller, created by `dau_engine_new`.
     let eng = &mut *engine;
     if !eng.is_enabled() {
-        return DauResult::empty();
+        return DauDeltaResult::empty();
     }
+    let old = eng.composing();
     let raw = eng.escape();
-    DauResult::from_text(DauAction::Restore, &raw, false)
+    let delta = display_delta(&old, &raw);
+    DauDeltaResult::from_delta(DauAction::Restore, &delta, false)
 }
 
 /// Clear the composing word.
@@ -186,6 +224,35 @@ pub unsafe extern "C" fn dau_clear(engine: *mut Engine) {
     }
     // SAFETY: non-null pointer owned by caller, created by `dau_engine_new`.
     (*engine).clear();
+}
+
+/// Backspace one user-visible Unicode scalar while composing.
+///
+/// Returns [`DauAction::UpdatePreedit`] with a display delta when a scalar was
+/// removed (typically `backspace == 1`, `count == 0`). Returns
+/// [`DauAction::None`] when the compose buffer is already empty (host may pass
+/// the physical Backspace through) or when the engine is null / disabled.
+///
+/// # Safety
+/// - `engine` must be null or a valid live pointer from [`dau_engine_new`].
+#[no_mangle]
+pub unsafe extern "C" fn dau_backspace(engine: *mut Engine) -> DauDeltaResult {
+    if engine.is_null() {
+        return DauDeltaResult::empty();
+    }
+    // SAFETY: non-null pointer owned by caller, created by `dau_engine_new`.
+    let eng = &mut *engine;
+    if !eng.is_enabled() {
+        return DauDeltaResult::empty();
+    }
+    let old = eng.composing();
+    match eng.backspace_one_display_scalar() {
+        Some(new) => {
+            let delta = display_delta(&old, &new);
+            DauDeltaResult::from_delta(DauAction::UpdatePreedit, &delta, false)
+        }
+        None => DauDeltaResult::empty(),
+    }
 }
 
 /// Switch input method. Does not clear the current buffer.
@@ -383,11 +450,22 @@ mod tests {
     use std::ffi::CString;
     use std::ptr;
 
-    fn utf32_to_string(r: &DauResult) -> String {
-        r.chars[..r.len as usize]
+    fn insert_string(r: &DauDeltaResult) -> String {
+        r.chars[..r.count as usize]
             .iter()
             .filter_map(|&c| char::from_u32(c))
             .collect()
+    }
+
+    /// Reconstruct host-visible text by applying a sequence of deltas from empty.
+    fn apply_delta(host: &mut String, r: &DauDeltaResult) {
+        if r.backspace > 0 {
+            let mut chars: Vec<char> = host.chars().collect();
+            let keep = chars.len().saturating_sub(r.backspace as usize);
+            chars.truncate(keep);
+            *host = chars.into_iter().collect();
+        }
+        host.push_str(&insert_string(r));
     }
 
     #[test]
@@ -399,22 +477,39 @@ mod tests {
             dau_set_auto_capitalize(eng, false);
             dau_set_auto_restore(eng, false);
 
+            let mut host = String::new();
+
             let r = dau_process_char(eng, 'v' as u32, false);
             assert_eq!(r.action, DauAction::UpdatePreedit);
-            assert_eq!(utf32_to_string(&r), "v");
+            assert_eq!(r.backspace, 0);
+            assert_eq!(insert_string(&r), "v");
+            apply_delta(&mut host, &r);
+            assert_eq!(host, "v");
 
             let r = dau_process_char(eng, 'a' as u32, false);
-            assert_eq!(utf32_to_string(&r), "va");
+            assert_eq!(r.backspace, 0);
+            assert_eq!(insert_string(&r), "a");
+            apply_delta(&mut host, &r);
+            assert_eq!(host, "va");
 
             let r = dau_process_char(eng, 'a' as u32, false);
-            assert_eq!(utf32_to_string(&r), "vâ");
+            // "va" → "vâ": delete last scalar, insert â
+            assert_eq!(r.backspace, 1);
+            assert_eq!(insert_string(&r), "â");
+            apply_delta(&mut host, &r);
+            assert_eq!(host, "vâ");
 
             let r = dau_process_char(eng, 'n' as u32, false);
-            assert_eq!(utf32_to_string(&r), "vân");
+            assert_eq!(r.backspace, 0);
+            assert_eq!(insert_string(&r), "n");
+            apply_delta(&mut host, &r);
+            assert_eq!(host, "vân");
 
             let r = dau_on_break(eng, ' ' as u32);
             assert_eq!(r.action, DauAction::Commit);
-            assert_eq!(utf32_to_string(&r), "vân");
+            // Commit equals on-screen compose → empty delta.
+            assert_eq!(r.backspace, 0);
+            assert_eq!(r.count, 0);
             assert!(!r.capitalize_next);
 
             dau_engine_free(eng);
@@ -422,17 +517,21 @@ mod tests {
     }
 
     #[test]
-    fn escape_returns_raw() {
+    fn escape_returns_raw_delta() {
         // SAFETY: engine from dau_engine_new; freed at end of test.
         unsafe {
             let eng = dau_engine_new(DauMethod::Telex);
             dau_set_auto_capitalize(eng, false);
 
-            dau_process_char(eng, 'a' as u32, false);
-            dau_process_char(eng, 'a' as u32, false);
+            let mut host = String::new();
+            apply_delta(&mut host, &dau_process_char(eng, 'a' as u32, false));
+            apply_delta(&mut host, &dau_process_char(eng, 'a' as u32, false));
+            assert_eq!(host, "â");
+
             let r = dau_escape(eng);
             assert_eq!(r.action, DauAction::Restore);
-            assert_eq!(utf32_to_string(&r), "aa");
+            apply_delta(&mut host, &r);
+            assert_eq!(host, "aa");
 
             dau_engine_free(eng);
         }
@@ -445,13 +544,18 @@ mod tests {
         unsafe {
             let r = dau_process_char(null, 'a' as u32, false);
             assert_eq!(r.action, DauAction::None);
-            assert_eq!(r.len, 0);
+            assert_eq!(r.count, 0);
+            assert_eq!(r.backspace, 0);
 
             let r = dau_on_break(null, ' ' as u32);
             assert_eq!(r.action, DauAction::None);
 
             let r = dau_escape(null);
             assert_eq!(r.action, DauAction::None);
+
+            let r = dau_backspace(null);
+            assert_eq!(r.action, DauAction::None);
+            assert_eq!(r.count, 0);
 
             dau_clear(null);
             dau_set_method(null, DauMethod::Vni);
@@ -460,6 +564,49 @@ mod tests {
             dau_set_auto_restore(null, false);
             dau_set_shortcuts(null, ptr::null(), 0);
             dau_engine_free(null);
+        }
+    }
+
+    #[test]
+    fn backspace_one_display_scalar_telex() {
+        // SAFETY: engine from dau_engine_new; freed at end of test.
+        unsafe {
+            let eng = dau_engine_new(DauMethod::Telex);
+            dau_set_auto_capitalize(eng, false);
+            dau_set_auto_restore(eng, false);
+
+            let mut host = String::new();
+            for ch in "dduwa".chars() {
+                let r = dau_process_char(eng, ch as u32, false);
+                assert_eq!(r.action, DauAction::UpdatePreedit);
+                apply_delta(&mut host, &r);
+            }
+            // Preedit should be "đưa"; backspace one visible scalar → "đư".
+            let r = dau_backspace(eng);
+            assert_eq!(r.action, DauAction::UpdatePreedit);
+            assert_eq!(r.backspace, 1);
+            assert_eq!(r.count, 0);
+            apply_delta(&mut host, &r);
+            assert_eq!(host, "đư");
+
+            let r = dau_process_char(eng, 'a' as u32, false);
+            apply_delta(&mut host, &r);
+            assert_eq!(host, "đưa");
+
+            // Empty compose → None so host may pass physical Backspace.
+            dau_clear(eng);
+            host.clear();
+            let r = dau_backspace(eng);
+            assert_eq!(r.action, DauAction::None);
+            assert_eq!(r.count, 0);
+
+            // Disabled engine is also a no-op.
+            apply_delta(&mut host, &dau_process_char(eng, 'a' as u32, false));
+            dau_set_enabled(eng, false);
+            let r = dau_backspace(eng);
+            assert_eq!(r.action, DauAction::None);
+
+            dau_engine_free(eng);
         }
     }
 
@@ -473,12 +620,13 @@ mod tests {
 
             let r = dau_process_char(eng, 'a' as u32, false);
             assert_eq!(r.action, DauAction::None);
-            assert_eq!(r.len, 0);
+            assert_eq!(r.count, 0);
 
             dau_set_enabled(eng, true);
             let r = dau_process_char(eng, 'a' as u32, false);
             assert_eq!(r.action, DauAction::UpdatePreedit);
-            assert_eq!(utf32_to_string(&r), "a");
+            assert_eq!(r.backspace, 0);
+            assert_eq!(insert_string(&r), "a");
 
             dau_engine_free(eng);
         }
@@ -497,12 +645,14 @@ mod tests {
             let ptrs = [k.as_ptr(), v.as_ptr()];
             dau_set_shortcuts(eng, ptrs.as_ptr(), 1);
 
+            let mut host = String::new();
             for ch in ['v', 'n'] {
-                dau_process_char(eng, ch as u32, false);
+                apply_delta(&mut host, &dau_process_char(eng, ch as u32, false));
             }
             let r = dau_on_break(eng, ' ' as u32);
             assert_eq!(r.action, DauAction::Commit);
-            assert_eq!(utf32_to_string(&r), "Việt Nam");
+            apply_delta(&mut host, &r);
+            assert_eq!(host, "Việt Nam");
 
             dau_engine_free(eng);
         }
@@ -524,13 +674,13 @@ mod tests {
         unsafe {
             let eng = dau_engine_new(DauMethod::Telex);
             dau_set_auto_capitalize(eng, false);
-            // 70 letters → display longer than 64; FFI must not overflow.
+            // 70 letters → insert payload must not overflow 64.
             for _ in 0..70 {
                 let r = dau_process_char(eng, 'a' as u32, false);
-                assert!(r.len as usize <= DAU_RESULT_MAX_CHARS);
+                assert!(r.count as usize <= DAU_DELTA_MAX_CHARS);
             }
             let r = dau_on_break(eng, ' ' as u32);
-            assert!(r.len as usize <= DAU_RESULT_MAX_CHARS);
+            assert!(r.count as usize <= DAU_DELTA_MAX_CHARS);
             dau_engine_free(eng);
         }
     }
@@ -544,7 +694,8 @@ mod tests {
             dau_process_char(eng, 'a' as u32, false);
             dau_clear(eng);
             let r = dau_process_char(eng, 'b' as u32, false);
-            assert_eq!(utf32_to_string(&r), "b");
+            assert_eq!(r.backspace, 0);
+            assert_eq!(insert_string(&r), "b");
             dau_engine_free(eng);
         }
     }
@@ -611,5 +762,18 @@ enabled = true
         }
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn display_delta_helpers_match_engine() {
+        use crate::engine::display_delta;
+        let d = display_delta("tieen", "tiên");
+        assert_eq!(d.backspace, 3);
+        assert_eq!(d.insert, "ên");
+        let d = display_delta("a", "â");
+        assert_eq!(d.backspace, 1);
+        assert_eq!(d.insert, "â");
+        let d = display_delta("tiếng", "tiếng");
+        assert!(d.is_empty());
     }
 }

@@ -1,16 +1,58 @@
 // SPDX-License-Identifier: MIT
+//
+// Delta result layout (`DauDeltaResult`) derived from Gõ Nhanh
+// (BSD-3-Clause, Copyright (c) 2025 Gõ Nhanh Contributors). See repo root NOTICE.
 #include "rust_bridge.h"
+
+#include <algorithm>
+#include <string>
+#include <vector>
 
 namespace dau {
 
 namespace {
 
-DauResult emptyResult() {
-    DauResult r{};
+DauDeltaResult emptyResult() {
+    DauDeltaResult r{};
     r.action = DauAction_None;
-    r.len = 0;
+    r.count = 0;
+    r.backspace = 0;
     r.capitalize_next = false;
     return r;
+}
+
+// Decode UTF-8 into Unicode scalar values (UTF-32 code points). Invalid
+// sequences are skipped (defensive; host strings come from our own encoder).
+std::vector<uint32_t> utf8ToScalars(const std::string &utf8) {
+    std::vector<uint32_t> out;
+    out.reserve(utf8.size());
+    const auto *p = reinterpret_cast<const unsigned char *>(utf8.data());
+    const auto *end = p + utf8.size();
+    while (p < end) {
+        const unsigned char c = *p;
+        if (c < 0x80U) {
+            out.push_back(c);
+            ++p;
+        } else if ((c >> 5U) == 0x6U && p + 1 < end) {
+            out.push_back((static_cast<uint32_t>(c & 0x1FU) << 6U) |
+                          (p[1] & 0x3FU));
+            p += 2;
+        } else if ((c >> 4U) == 0xEU && p + 2 < end) {
+            out.push_back((static_cast<uint32_t>(c & 0x0FU) << 12U) |
+                          (static_cast<uint32_t>(p[1] & 0x3FU) << 6U) |
+                          (p[2] & 0x3FU));
+            p += 3;
+        } else if ((c >> 3U) == 0x1EU && p + 3 < end) {
+            out.push_back((static_cast<uint32_t>(c & 0x07U) << 18U) |
+                          (static_cast<uint32_t>(p[1] & 0x3FU) << 12U) |
+                          (static_cast<uint32_t>(p[2] & 0x3FU) << 6U) |
+                          (p[3] & 0x3FU));
+            p += 4;
+        } else {
+            ++p; // skip invalid
+        }
+    }
+    return out;
 }
 
 } // namespace
@@ -41,21 +83,21 @@ RustBridge &RustBridge::operator=(RustBridge &&other) noexcept {
     return *this;
 }
 
-DauResult RustBridge::processChar(uint32_t ch, bool caps) {
+DauDeltaResult RustBridge::processChar(uint32_t ch, bool caps) {
     if (h_ == nullptr) {
         return emptyResult();
     }
     return dau_process_char(h_, ch, caps);
 }
 
-DauResult RustBridge::onBreak(uint32_t brk) {
+DauDeltaResult RustBridge::onBreak(uint32_t brk) {
     if (h_ == nullptr) {
         return emptyResult();
     }
     return dau_on_break(h_, brk);
 }
 
-DauResult RustBridge::escape() {
+DauDeltaResult RustBridge::escape() {
     if (h_ == nullptr) {
         return emptyResult();
     }
@@ -106,13 +148,13 @@ bool RustBridge::loadConfig(const char *shipped, const char *user) {
     return dau_load_config(h_, shipped, user);
 }
 
-std::string utf32ToUtf8(const uint32_t *chars, uint32_t len) {
+std::string utf32ToUtf8(const uint32_t *chars, uint32_t count) {
     std::string out;
-    if (chars == nullptr || len == 0) {
+    if (chars == nullptr || count == 0) {
         return out;
     }
-    out.reserve(static_cast<size_t>(len) * 3U);
-    for (uint32_t i = 0; i < len; ++i) {
+    out.reserve(static_cast<size_t>(count) * 3U);
+    for (uint32_t i = 0; i < count; ++i) {
         const uint32_t cp = chars[i];
         if (cp <= 0x7FU) {
             out.push_back(static_cast<char>(cp));
@@ -132,6 +174,22 @@ std::string utf32ToUtf8(const uint32_t *chars, uint32_t len) {
         // Skip invalid code points silently.
     }
     return out;
+}
+
+std::string applyDelta(const std::string &base, uint8_t backspace,
+                       const uint32_t *chars, uint8_t count) {
+    auto scalars = utf8ToScalars(base);
+    const size_t drop =
+        std::min(static_cast<size_t>(backspace), scalars.size());
+    if (drop > 0) {
+        scalars.resize(scalars.size() - drop);
+    }
+    if (chars != nullptr && count > 0) {
+        for (uint8_t i = 0; i < count; ++i) {
+            scalars.push_back(chars[i]);
+        }
+    }
+    return utf32ToUtf8(scalars.data(), static_cast<uint32_t>(scalars.size()));
 }
 
 } // namespace dau

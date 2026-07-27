@@ -1,6 +1,6 @@
 //! Tone and mark types, plus modern-style tone placement.
 
-use crate::engine::buffer::Buffer;
+use crate::engine::buffer::{Buffer, CompChar};
 
 /// Vietnamese tone (thanh).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -57,6 +57,21 @@ pub fn apply_tone(buf: &mut Buffer, tone: Tone) -> bool {
     }
 }
 
+/// `i` in `gi`+vowel and `u` in `qu`+vowel belong to the onset digraph, not the
+/// nucleus — skip them when choosing the tone host. Bare `gi` / `gi`+coda keep
+/// `i` as the nucleus (gì, gìn).
+fn is_onset_digraph_vowel(chars: &[CompChar], idx: usize) -> bool {
+    if idx == 0 || idx + 1 >= chars.len() {
+        return false;
+    }
+    if !chars[idx + 1].is_vowel() {
+        return false;
+    }
+    let prev = chars[idx - 1].base;
+    let cur = chars[idx].base;
+    (prev == 'g' && cur == 'i') || (prev == 'q' && cur == 'u')
+}
+
 /// Index of the vowel that should carry the tone (kiểu mới).
 ///
 /// Rules (priority order):
@@ -67,17 +82,19 @@ pub fn apply_tone(buf: &mut Buffer, tone: Tone) -> bool {
 ///    - 3 vowels → middle
 ///    - 2 vowels ∈ {oa, oe, uy} → second; otherwise → first
 ///    - 1 vowel → itself
+///
+/// Onset digraph vowels (`i` in `gi`+V, `u` in `qu`+V) are not nucleus vowels.
 pub fn find_tone_target(buf: &Buffer) -> Option<usize> {
     let chars = buf.chars();
     if chars.is_empty() {
         return None;
     }
 
-    // Collect vowel indices (base letters that are vowels; đ is not a vowel).
+    // Collect nucleus vowel indices (skip gi/qu digraph glides).
     let vowels: Vec<usize> = chars
         .iter()
         .enumerate()
-        .filter(|(_, c)| c.is_vowel())
+        .filter(|(i, c)| c.is_vowel() && !is_onset_digraph_vowel(chars, *i))
         .map(|(i, _)| i)
         .collect();
 

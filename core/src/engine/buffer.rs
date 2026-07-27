@@ -69,6 +69,11 @@ impl Buffer {
         self.chars.push(c);
     }
 
+    /// Remove the last logical character (one user-visible display scalar).
+    pub fn pop(&mut self) -> Option<CompChar> {
+        self.chars.pop()
+    }
+
     pub fn get_mut(&mut self, i: usize) -> Option<&mut CompChar> {
         self.chars.get_mut(i)
     }

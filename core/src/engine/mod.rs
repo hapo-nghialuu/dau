@@ -1,4 +1,20 @@
 //! Vietnamese input engine: Telex / VNI composition pipeline.
+//!
+//! ## Host display delta (port of Gõ Nhanh contract shape)
+//!
+//! [`DisplayDelta`] / [`display_delta`] implement the *host-facing* contract of
+//! “delete N scalars, then insert these code points” instead of returning the
+//! full preedit string. The algorithm is common-prefix based.
+//!
+//! Portions of this delta contract are derived from **Gõ Nhanh**
+//! (`core/src/engine/mod.rs` `Result { chars, action, backspace, count, flags }`):
+//!
+//! Copyright (c) 2025, Gõ Nhanh Contributors  
+//! SPDX-License-Identifier: BSD-3-Clause  
+//! See the root `NOTICE` file for the full license text.
+//!
+//! Vietnamese Telex/VNI rules in this module and submodules are original Dấu
+//! (MIT) work and are **not** ported from Gõ Nhanh.
 
 mod buffer;
 // Explicit path avoids ambiguity when leftover `syllable.rs` / `syllable/` coexist.
@@ -24,6 +40,59 @@ pub use ux::BreakOutput;
 pub enum Method {
     Telex,
     Vni,
+}
+
+/// Host-facing display delta: delete `backspace` Unicode scalars, then insert
+/// the characters in `insert`.
+///
+/// Derived from the Gõ Nhanh FFI `Result` contract shape (BSD-3-Clause,
+/// Copyright (c) 2025 Gõ Nhanh Contributors). See root `NOTICE`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DisplayDelta {
+    /// Number of Unicode scalars (Rust `char`s) the host should delete before inserting.
+    pub backspace: u8,
+    /// Code points to insert after the backspaces (not the full preedit).
+    pub insert: String,
+}
+
+impl DisplayDelta {
+    /// No host mutation.
+    #[inline]
+    pub fn none() -> Self {
+        Self {
+            backspace: 0,
+            insert: String::new(),
+        }
+    }
+
+    /// Whether the host can leave the document unchanged.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.backspace == 0 && self.insert.is_empty()
+    }
+}
+
+/// Compute a minimal common-prefix delta from the host-visible `old` display to `new`.
+///
+/// - `backspace` = number of trailing scalars in `old` after the shared prefix
+/// - `insert` = remaining scalars of `new` after the shared prefix
+///
+/// Both strings are measured in Unicode scalars (`char`), matching IME backspace
+/// units used by the macOS/Linux hosts.
+///
+/// Contract shape derived from Gõ Nhanh (BSD-3-Clause, Copyright (c) 2025
+/// Gõ Nhanh Contributors). Implementation is original to Dấu.
+pub fn display_delta(old: &str, new: &str) -> DisplayDelta {
+    let old_chars: Vec<char> = old.chars().collect();
+    let new_chars: Vec<char> = new.chars().collect();
+    let mut common = 0usize;
+    let limit = old_chars.len().min(new_chars.len());
+    while common < limit && old_chars[common] == new_chars[common] {
+        common += 1;
+    }
+    let backspace = (old_chars.len() - common).min(u8::MAX as usize) as u8;
+    let insert: String = new_chars[common..].iter().collect();
+    DisplayDelta { backspace, insert }
 }
 
 /// Core composing engine for one word at a time.
@@ -209,6 +278,64 @@ impl Engine {
         self.buffer.display()
     }
 
+    /// Backspace one **user-visible** Unicode scalar while composing.
+    ///
+    /// # Semantics
+    ///
+    /// - Removes the last [`CompChar`] from the display buffer (one precomposed
+    ///   letter such as `ư`, `ế`, `đ` — not a raw keystroke and not a combining
+    ///   mark in isolation).
+    /// - Re-syncs [`Self::raw`] so Space / Escape / auto-restore cannot resurrect
+    ///   content that was deleted. After an edit, raw is rebuilt from the
+    ///   remaining bases (+ caps); marks and tones stay only on the buffer so
+    ///   further Telex/VNI keys continue from the edited display state.
+    /// - Returns `Some(new_display)` when a scalar was removed (including
+    ///   `Some("")` when the last scalar was deleted).
+    /// - Returns `None` when there is nothing to delete (empty compose). The
+    ///   host should treat that as a no-op and may pass the physical Backspace
+    ///   through to the application.
+    ///
+    /// # Examples (behavior under test)
+    ///
+    /// - Telex `dduwa` → `đưa`, backspace → `đư`, `a` → `đưa`
+    /// - Telex `tieengs` → `tiếng`, backspace → `tiến`, `g` → `tiếng`
+    /// - Telex `aa` → `â`, backspace → `""` (one display unit, not raw `a`)
+    /// - Empty buffer, backspace → `None`
+    pub fn backspace_one_display_scalar(&mut self) -> Option<String> {
+        if self.buffer.is_empty() {
+            // Defensive: empty display must not keep a zombie raw word.
+            if !self.raw_keys.is_empty() {
+                self.raw_keys.clear();
+                self.pass_through = false;
+            }
+            return None;
+        }
+
+        self.buffer.pop();
+
+        if self.buffer.is_empty() {
+            // Full clear of the composing word — same blank state as a fresh word.
+            self.raw_keys.clear();
+            self.pass_through = false;
+            return Some(String::new());
+        }
+
+        // Keep raw/buffer consistent for continued typing and commit/restore.
+        self.resync_raw_after_display_edit();
+        Some(self.buffer.display())
+    }
+
+    /// Rebuild `raw_keys` from the remaining buffer after a display-scalar edit.
+    ///
+    /// Raw is an ASCII-base approximation of what remains (case preserved via
+    /// `CompChar::caps`). It is intentionally not a full reverse of Telex/VNI
+    /// key history: the buffer owns marks/tones for further composition, while
+    /// raw only needs to be short enough that deleted tails cannot reappear on
+    /// Space auto-restore or Escape.
+    fn resync_raw_after_display_edit(&mut self) {
+        self.raw_keys = raw_keys_from_buffer(&self.buffer);
+    }
+
     fn commit_current_word(&self, brk: char) -> String {
         if self.raw_keys.is_empty() && self.buffer.is_empty() {
             return String::new();
@@ -228,12 +355,10 @@ impl Engine {
                 self.auto_restore,
                 self.pass_through,
             )
+            && (self.method != Method::Telex
+                || !should_keep_explicit_telex_revert(&self.raw_keys, &display))
         {
-            if self.method != Method::Telex
-                || !should_keep_explicit_telex_revert(&self.raw_keys, &display)
-            {
-                return self.raw_keys.clone();
-            }
+            return self.raw_keys.clone();
         }
 
         // 3) After ESC pass-through, commit raw (buffer already mirrors raw).
@@ -250,6 +375,20 @@ impl Engine {
         self.raw_keys.clear();
         self.pass_through = false;
     }
+}
+
+/// ASCII-base raw string derived from remaining [`CompChar`]s (caps preserved).
+fn raw_keys_from_buffer(buf: &Buffer) -> String {
+    let mut raw = String::with_capacity(buf.chars().len());
+    for c in buf.chars() {
+        let ch = if c.caps {
+            c.base.to_ascii_uppercase()
+        } else {
+            c.base
+        };
+        raw.push(ch);
+    }
+    raw
 }
 
 #[cfg(test)]

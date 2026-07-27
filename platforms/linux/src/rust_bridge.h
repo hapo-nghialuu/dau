@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: MIT
+//
+// Delta result layout (`DauDeltaResult`) derived from Gõ Nhanh
+// (BSD-3-Clause, Copyright (c) 2025 Gõ Nhanh Contributors). See repo root NOTICE.
 #ifndef DAU_RUST_BRIDGE_H
 #define DAU_RUST_BRIDGE_H
 
@@ -23,9 +26,9 @@ public:
     RustBridge(RustBridge &&other) noexcept;
     RustBridge &operator=(RustBridge &&other) noexcept;
 
-    DauResult processChar(uint32_t ch, bool caps);
-    DauResult onBreak(uint32_t brk);
-    DauResult escape();
+    DauDeltaResult processChar(uint32_t ch, bool caps);
+    DauDeltaResult onBreak(uint32_t brk);
+    DauDeltaResult escape();
     void clear();
     void setMethod(bool vni);
     void setEnabled(bool enabled);
@@ -40,8 +43,13 @@ private:
     Engine *h_ = nullptr;
 };
 
-// Encode UTF-32 code points (length `len`) into a UTF-8 std::string.
-std::string utf32ToUtf8(const uint32_t *chars, uint32_t len);
+// Encode UTF-32 code points (length `count`) into a UTF-8 std::string.
+std::string utf32ToUtf8(const uint32_t *chars, uint32_t count);
+
+// Apply a display delta to a host-visible UTF-8 string (Unicode scalar units).
+// Deletes up to `backspace` trailing scalars, then appends insert code points.
+std::string applyDelta(const std::string &base, uint8_t backspace,
+                       const uint32_t *chars, uint8_t count);
 
 } // namespace dau
 

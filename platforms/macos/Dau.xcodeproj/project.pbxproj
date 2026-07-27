@@ -1,0 +1,815 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		DAU00001000000000000001 /* dau-app-stub.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000001 /* dau-app-stub.swift */; };
+		DAU00001000000000000002 /* libdau_core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000002 /* libdau_core.a */; };
+		DAU00001000000000000010 /* dau-core-bridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000010 /* dau-core-bridge.swift */; };
+		DAU00001000000000000011 /* dau-result-mapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000011 /* dau-result-mapper.swift */; };
+		DAU00001000000000000012 /* mac-key-pipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000012 /* mac-key-pipeline.swift */; };
+		DAU00001000000000000020 /* dau-core-bridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000010 /* dau-core-bridge.swift */; };
+		DAU00001000000000000021 /* dau-result-mapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000011 /* dau-result-mapper.swift */; };
+		DAU00001000000000000022 /* mac-key-pipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000012 /* mac-key-pipeline.swift */; };
+		DAU00001000000000000030 /* dau-result-mapper-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000030 /* dau-result-mapper-tests.swift */; };
+		DAU00001000000000000031 /* mac-key-pipeline-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000031 /* mac-key-pipeline-tests.swift */; };
+		DAU00001000000000000040 /* libdau_core.a in Frameworks */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000002 /* libdau_core.a */; };
+		DAU00001000000000000050 /* injection-method.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000050 /* injection-method.swift */; };
+		DAU00001000000000000051 /* text-injector.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000051 /* text-injector.swift */; };
+		DAU00001000000000000052 /* ax-text-accessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000052 /* ax-text-accessor.swift */; };
+		DAU00001000000000000053 /* injection-method.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000050 /* injection-method.swift */; };
+		DAU00001000000000000054 /* text-injector.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000051 /* text-injector.swift */; };
+		DAU00001000000000000055 /* ax-text-accessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000052 /* ax-text-accessor.swift */; };
+		DAU00001000000000000056 /* text-injector-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000053 /* text-injector-tests.swift */; };
+		DAU00001000000000000060 /* key-classifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000060 /* key-classifier.swift */; };
+		DAU00001000000000000061 /* keyboard-event-tap.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000061 /* keyboard-event-tap.swift */; };
+		DAU00001000000000000062 /* key-classifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000060 /* key-classifier.swift */; };
+		DAU00001000000000000063 /* key-classifier-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000062 /* key-classifier-tests.swift */; };
+		DAU00001000000000000070 /* injection-profile.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000070 /* injection-profile.swift */; };
+		DAU00001000000000000071 /* injection-profile-store.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000071 /* injection-profile-store.swift */; };
+		DAU00001000000000000072 /* injection-profile-resolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000072 /* injection-profile-resolver.swift */; };
+		DAU00001000000000000073 /* app-context-resolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000073 /* app-context-resolver.swift */; };
+		DAU00001000000000000074 /* focus-change-observer.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000074 /* focus-change-observer.swift */; };
+		DAU00001000000000000075 /* injection-profile.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000070 /* injection-profile.swift */; };
+		DAU00001000000000000076 /* injection-profile-store.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000071 /* injection-profile-store.swift */; };
+		DAU00001000000000000077 /* injection-profile-resolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000072 /* injection-profile-resolver.swift */; };
+		DAU00001000000000000078 /* app-context-resolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000073 /* app-context-resolver.swift */; };
+		DAU00001000000000000079 /* focus-change-observer.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000074 /* focus-change-observer.swift */; };
+		DAU0000100000000000007A /* injection-profile-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000075 /* injection-profile-tests.swift */; };
+		DAU0000100000000000007B /* profiles.toml in Resources */ = {isa = PBXBuildFile; fileRef = DAU0000200000000000007B /* profiles.toml */; };
+		DAU0000100000000000007C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DAU0000200000000000007C /* Assets.xcassets */; };
+
+		DAU00001000000000000080 /* dau-app.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000080 /* dau-app.swift */; };
+		DAU00001000000000000081 /* app-delegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000081 /* app-delegate.swift */; };
+		DAU00001000000000000082 /* app-state.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000082 /* app-state.swift */; };
+		DAU00001000000000000083 /* menu-bar-controller.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000083 /* menu-bar-controller.swift */; };
+		DAU00001000000000000084 /* onboarding-view.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000084 /* onboarding-view.swift */; };
+		DAU00001000000000000085 /* input-source-observer.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000085 /* input-source-observer.swift */; };
+		DAU00001000000000000086 /* app-state.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000082 /* app-state.swift */; };
+		DAU00001000000000000087 /* input-source-observer.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000085 /* input-source-observer.swift */; };
+		DAU00001000000000000088 /* app-state-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000088 /* app-state-tests.swift */; };
+		DAU00001000000000000089 /* input-source-observer-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000089 /* input-source-observer-tests.swift */; };
+
+		DAU00001000000000000090 /* typing-session.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000090 /* typing-session.swift */; };
+		DAU00001000000000000091 /* typing-session.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000090 /* typing-session.swift */; };
+		DAU00001000000000000092 /* typing-session-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000092 /* typing-session-tests.swift */; };
+		DAU00001000000000000093 /* settings-view.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000093 /* settings-view.swift */; };
+		DAU00001000000000000094 /* launch-at-login.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000094 /* launch-at-login.swift */; };
+		DAU00001000000000000095 /* launch-at-login.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000094 /* launch-at-login.swift */; };
+		DAU00001000000000000096 /* toggle-hotkey.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000096 /* toggle-hotkey.swift */; };
+		DAU00001000000000000097 /* toggle-hotkey.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000096 /* toggle-hotkey.swift */; };
+		DAU00001000000000000098 /* toggle-hotkey-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000098 /* toggle-hotkey-tests.swift */; };
+		DAU00001000000000000099 /* toggle-hotkey-registrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000099 /* toggle-hotkey-registrar.swift */; };
+		DAU0000100000000000009A /* toggle-hotkey-registrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000099 /* toggle-hotkey-registrar.swift */; };
+		DAU000010000000000000A0 /* keyboard-event-tap.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000061 /* keyboard-event-tap.swift */; };
+		DAU000010000000000000A1 /* keyboard-event-tap-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU000020000000000000A1 /* keyboard-event-tap-tests.swift */; };
+		DAU000010000000000000A2 /* app-lifecycle-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU000020000000000000A2 /* app-lifecycle-tests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		DAU0000A000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DAU00010000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = DAU00006000000000000001;
+			remoteInfo = Dau;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		DAU00002000000000000001 /* dau-app-stub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "dau-app-stub.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000002 /* libdau_core.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libdau_core.a; path = build/lib/libdau_core.a; sourceTree = "<group>"; };
+		DAU00002000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		DAU00002000000000000004 /* Dau.entitlements.dev */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Dau.entitlements.dev; sourceTree = "<group>"; };
+		DAU00002000000000000005 /* Dau.entitlements.production */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Dau.entitlements.production; sourceTree = "<group>"; };
+		DAU00002000000000000006 /* dau-bridging-header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "dau-bridging-header.h"; sourceTree = "<group>"; };
+		DAU00002000000000000010 /* dau-core-bridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "dau-core-bridge.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000011 /* dau-result-mapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "dau-result-mapper.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000012 /* mac-key-pipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "mac-key-pipeline.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000030 /* dau-result-mapper-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "dau-result-mapper-tests.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000031 /* mac-key-pipeline-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "mac-key-pipeline-tests.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000050 /* injection-method.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "injection-method.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000051 /* text-injector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "text-injector.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000052 /* ax-text-accessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ax-text-accessor.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000053 /* text-injector-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "text-injector-tests.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000060 /* key-classifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "key-classifier.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000061 /* keyboard-event-tap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "keyboard-event-tap.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000062 /* key-classifier-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "key-classifier-tests.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000070 /* injection-profile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "injection-profile.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000071 /* injection-profile-store.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "injection-profile-store.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000072 /* injection-profile-resolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "injection-profile-resolver.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000073 /* app-context-resolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "app-context-resolver.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000074 /* focus-change-observer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "focus-change-observer.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000075 /* injection-profile-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "injection-profile-tests.swift"; sourceTree = "<group>"; };
+		DAU0000200000000000007B /* profiles.toml */ = {isa = PBXFileReference; lastKnownFileType = text; path = profiles.toml; sourceTree = "<group>"; };
+		DAU0000200000000000007C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		DAU00002000000000000080 /* dau-app.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "dau-app.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000081 /* app-delegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "app-delegate.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000082 /* app-state.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "app-state.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000083 /* menu-bar-controller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "menu-bar-controller.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000084 /* onboarding-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "onboarding-view.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000085 /* input-source-observer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "input-source-observer.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000088 /* app-state-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "app-state-tests.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000089 /* input-source-observer-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "input-source-observer-tests.swift"; sourceTree = "<group>"; };
+		DAU00003000000000000001 /* Dau.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dau.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		DAU00003000000000000002 /* DauTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DauTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+
+		DAU00002000000000000090 /* typing-session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "typing-session.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000092 /* typing-session-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "typing-session-tests.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000093 /* settings-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "settings-view.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000094 /* launch-at-login.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "launch-at-login.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000096 /* toggle-hotkey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "toggle-hotkey.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000098 /* toggle-hotkey-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "toggle-hotkey-tests.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000099 /* toggle-hotkey-registrar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "toggle-hotkey-registrar.swift"; sourceTree = "<group>"; };
+		DAU000020000000000000A1 /* keyboard-event-tap-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "keyboard-event-tap-tests.swift"; sourceTree = "<group>"; };
+		DAU000020000000000000A2 /* app-lifecycle-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "app-lifecycle-tests.swift"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		DAU00004000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DAU00001000000000000002 /* libdau_core.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DAU00004000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DAU00001000000000000040 /* libdau_core.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		DAU00005000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DAU00005000000000000003 /* Sources */,
+				DAU00005000000000000007 /* Tests */,
+				DAU00005000000000000005 /* Support */,
+				DAU00005000000000000006 /* Resources */,
+				DAU00002000000000000002 /* libdau_core.a */,
+				DAU00005000000000000002 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DAU00005000000000000002 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				DAU00003000000000000001 /* Dau.app */,
+				DAU00003000000000000002 /* DauTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		DAU00005000000000000003 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				DAU00005000000000000004 /* app */,
+				DAU00005000000000000008 /* bridge */,
+				DAU0000500000000000000B /* config */,
+				DAU0000500000000000000A /* input */,
+				DAU00005000000000000009 /* output */,
+				DAU0000500000000000000D /* session */,
+				DAU0000500000000000000C /* ui */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		DAU00005000000000000004 /* app */ = {
+			isa = PBXGroup;
+			children = (
+				DAU00002000000000000080 /* dau-app.swift */,
+				DAU00002000000000000081 /* app-delegate.swift */,
+				DAU00002000000000000082 /* app-state.swift */,
+			);
+			path = app;
+			sourceTree = "<group>";
+		};
+		DAU00005000000000000005 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				DAU00002000000000000006 /* dau-bridging-header.h */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+		DAU00005000000000000006 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				DAU00002000000000000003 /* Info.plist */,
+				DAU00002000000000000004 /* Dau.entitlements.dev */,
+				DAU00002000000000000005 /* Dau.entitlements.production */,
+				DAU0000200000000000007B /* profiles.toml */,
+				DAU0000200000000000007C /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		DAU00005000000000000007 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				DAU00002000000000000030 /* dau-result-mapper-tests.swift */,
+				DAU00002000000000000031 /* mac-key-pipeline-tests.swift */,
+				DAU00002000000000000053 /* text-injector-tests.swift */,
+				DAU00002000000000000062 /* key-classifier-tests.swift */,
+				DAU00002000000000000075 /* injection-profile-tests.swift */,
+				DAU00002000000000000088 /* app-state-tests.swift */,
+				DAU00002000000000000089 /* input-source-observer-tests.swift */,
+				DAU00002000000000000092 /* typing-session-tests.swift */,
+				DAU00002000000000000098 /* toggle-hotkey-tests.swift */,
+				DAU000020000000000000A1 /* keyboard-event-tap-tests.swift */,
+				DAU000020000000000000A2 /* app-lifecycle-tests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		DAU00005000000000000008 /* bridge */ = {
+			isa = PBXGroup;
+			children = (
+				DAU00002000000000000010 /* dau-core-bridge.swift */,
+				DAU00002000000000000011 /* dau-result-mapper.swift */,
+				DAU00002000000000000012 /* mac-key-pipeline.swift */,
+			);
+			path = bridge;
+			sourceTree = "<group>";
+		};
+		DAU00005000000000000009 /* output */ = {
+			isa = PBXGroup;
+			children = (
+				DAU00002000000000000050 /* injection-method.swift */,
+				DAU00002000000000000051 /* text-injector.swift */,
+				DAU00002000000000000052 /* ax-text-accessor.swift */,
+			);
+			path = output;
+			sourceTree = "<group>";
+		};
+		DAU0000500000000000000A /* input */ = {
+			isa = PBXGroup;
+			children = (
+				DAU00002000000000000060 /* key-classifier.swift */,
+				DAU00002000000000000061 /* keyboard-event-tap.swift */,
+				DAU00002000000000000073 /* app-context-resolver.swift */,
+				DAU00002000000000000074 /* focus-change-observer.swift */,
+				DAU00002000000000000085 /* input-source-observer.swift */,
+			);
+			path = input;
+			sourceTree = "<group>";
+		};
+		DAU0000500000000000000B /* config */ = {
+			isa = PBXGroup;
+			children = (
+				DAU00002000000000000070 /* injection-profile.swift */,
+				DAU00002000000000000071 /* injection-profile-store.swift */,
+				DAU00002000000000000072 /* injection-profile-resolver.swift */,
+				DAU00002000000000000094 /* launch-at-login.swift */,
+				DAU00002000000000000096 /* toggle-hotkey.swift */,
+				DAU00002000000000000099 /* toggle-hotkey-registrar.swift */,
+			);
+			path = config;
+			sourceTree = "<group>";
+		};
+		DAU0000500000000000000C /* ui */ = {
+			isa = PBXGroup;
+			children = (
+				DAU00002000000000000083 /* menu-bar-controller.swift */,
+				DAU00002000000000000084 /* onboarding-view.swift */,
+				DAU00002000000000000093 /* settings-view.swift */,
+			);
+			path = ui;
+			sourceTree = "<group>";
+		};
+		DAU0000500000000000000D /* session */ = {
+			isa = PBXGroup;
+			children = (
+				DAU00002000000000000090 /* typing-session.swift */,
+			);
+			path = session;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		DAU00006000000000000001 /* Dau */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DAU00007000000000000001 /* Build configuration list for PBXNativeTarget "Dau" */;
+			buildPhases = (
+				DAU00008000000000000001 /* Sources */,
+				DAU00004000000000000001 /* Frameworks */,
+				DAU00009000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Dau;
+			productName = Dau;
+			productReference = DAU00003000000000000001 /* Dau.app */;
+			productType = "com.apple.product-type.application";
+		};
+		DAU00006000000000000002 /* DauTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DAU00007000000000000002 /* Build configuration list for PBXNativeTarget "DauTests" */;
+			buildPhases = (
+				DAU00008000000000000002 /* Sources */,
+				DAU00004000000000000002 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DAU0000B000000000000001 /* PBXTargetDependency */,
+			);
+			name = DauTests;
+			productName = DauTests;
+			productReference = DAU00003000000000000002 /* DauTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		DAU00010000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					DAU00006000000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					DAU00006000000000000002 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = DAU00011000000000000001 /* Build configuration list for PBXProject "Dau" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = DAU00005000000000000001;
+			productRefGroup = DAU00005000000000000002 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DAU00006000000000000001 /* Dau */,
+				DAU00006000000000000002 /* DauTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		DAU00009000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DAU0000100000000000007B /* profiles.toml in Resources */,
+				DAU0000100000000000007C /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		DAU00008000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DAU00001000000000000080 /* dau-app.swift in Sources */,
+				DAU00001000000000000081 /* app-delegate.swift in Sources */,
+				DAU00001000000000000082 /* app-state.swift in Sources */,
+				DAU00001000000000000010 /* dau-core-bridge.swift in Sources */,
+				DAU00001000000000000011 /* dau-result-mapper.swift in Sources */,
+				DAU00001000000000000012 /* mac-key-pipeline.swift in Sources */,
+				DAU00001000000000000050 /* injection-method.swift in Sources */,
+				DAU00001000000000000051 /* text-injector.swift in Sources */,
+				DAU00001000000000000052 /* ax-text-accessor.swift in Sources */,
+				DAU00001000000000000060 /* key-classifier.swift in Sources */,
+				DAU00001000000000000061 /* keyboard-event-tap.swift in Sources */,
+				DAU00001000000000000070 /* injection-profile.swift in Sources */,
+				DAU00001000000000000071 /* injection-profile-store.swift in Sources */,
+				DAU00001000000000000072 /* injection-profile-resolver.swift in Sources */,
+				DAU00001000000000000073 /* app-context-resolver.swift in Sources */,
+				DAU00001000000000000074 /* focus-change-observer.swift in Sources */,
+				DAU00001000000000000085 /* input-source-observer.swift in Sources */,
+				DAU00001000000000000083 /* menu-bar-controller.swift in Sources */,
+				DAU00001000000000000084 /* onboarding-view.swift in Sources */,
+				DAU00001000000000000093 /* settings-view.swift in Sources */,
+				DAU00001000000000000094 /* launch-at-login.swift in Sources */,
+				DAU00001000000000000096 /* toggle-hotkey.swift in Sources */,
+				DAU00001000000000000099 /* toggle-hotkey-registrar.swift in Sources */,
+				DAU00001000000000000090 /* typing-session.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DAU00008000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DAU00001000000000000020 /* dau-core-bridge.swift in Sources */,
+				DAU00001000000000000021 /* dau-result-mapper.swift in Sources */,
+				DAU00001000000000000022 /* mac-key-pipeline.swift in Sources */,
+				DAU00001000000000000030 /* dau-result-mapper-tests.swift in Sources */,
+				DAU00001000000000000031 /* mac-key-pipeline-tests.swift in Sources */,
+				DAU00001000000000000053 /* injection-method.swift in Sources */,
+				DAU00001000000000000054 /* text-injector.swift in Sources */,
+				DAU00001000000000000055 /* ax-text-accessor.swift in Sources */,
+				DAU00001000000000000056 /* text-injector-tests.swift in Sources */,
+				DAU00001000000000000062 /* key-classifier.swift in Sources */,
+				DAU00001000000000000063 /* key-classifier-tests.swift in Sources */,
+				DAU00001000000000000075 /* injection-profile.swift in Sources */,
+				DAU00001000000000000076 /* injection-profile-store.swift in Sources */,
+				DAU00001000000000000077 /* injection-profile-resolver.swift in Sources */,
+				DAU00001000000000000078 /* app-context-resolver.swift in Sources */,
+				DAU00001000000000000079 /* focus-change-observer.swift in Sources */,
+				DAU0000100000000000007A /* injection-profile-tests.swift in Sources */,
+				DAU00001000000000000086 /* app-state.swift in Sources */,
+				DAU00001000000000000087 /* input-source-observer.swift in Sources */,
+				DAU00001000000000000088 /* app-state-tests.swift in Sources */,
+				DAU00001000000000000089 /* input-source-observer-tests.swift in Sources */,
+				DAU00001000000000000091 /* typing-session.swift in Sources */,
+				DAU00001000000000000092 /* typing-session-tests.swift in Sources */,
+				DAU00001000000000000095 /* launch-at-login.swift in Sources */,
+				DAU00001000000000000097 /* toggle-hotkey.swift in Sources */,
+				DAU0000100000000000009A /* toggle-hotkey-registrar.swift in Sources */,
+				DAU00001000000000000098 /* toggle-hotkey-tests.swift in Sources */,
+				DAU000010000000000000A0 /* keyboard-event-tap.swift in Sources */,
+				DAU000010000000000000A1 /* keyboard-event-tap-tests.swift in Sources */,
+				DAU000010000000000000A2 /* app-lifecycle-tests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		DAU0000B000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = DAU00006000000000000001 /* Dau */;
+			targetProxy = DAU0000A000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		DAU00012000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		DAU00012000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				/* Host-only default; scripts/build/macos.sh --arch universal overrides. */
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		DAU00013000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Resources/Dau.entitlements.dev;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../../core/include",
+				);
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/build/lib",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					Foundation,
+					"-framework",
+					AppKit,
+					"-framework",
+					Security,
+					"-framework",
+					SystemConfiguration,
+					"-framework",
+					Carbon,
+					"-framework",
+					ApplicationServices,
+					"-framework",
+					CoreGraphics,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "io.github.hapo-nghialuu.dau";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				/* Placeholder bundle id until release owner assigns a permanent Apple Team ID / reverse-DNS. */
+				SWIFT_OBJC_BRIDGING_HEADER = "Support/dau-bridging-header.h";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		DAU00013000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Resources/Dau.entitlements.production;
+				CODE_SIGN_IDENTITY = "-";
+				/* Prevent Xcode from injecting get-task-allow on ad-hoc Release. */
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../../core/include",
+				);
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/build/lib",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					Foundation,
+					"-framework",
+					AppKit,
+					"-framework",
+					Security,
+					"-framework",
+					SystemConfiguration,
+					"-framework",
+					Carbon,
+					"-framework",
+					ApplicationServices,
+					"-framework",
+					CoreGraphics,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "io.github.hapo-nghialuu.dau";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OBJC_BRIDGING_HEADER = "Support/dau-bridging-header.h";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		DAU00013000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../../core/include",
+				);
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/build/lib",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					Foundation,
+					"-framework",
+					AppKit,
+					"-framework",
+					Security,
+					"-framework",
+					SystemConfiguration,
+					"-framework",
+					Carbon,
+					"-framework",
+					ApplicationServices,
+					"-framework",
+					CoreGraphics,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "io.github.hapo-nghialuu.dau.tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OBJC_BRIDGING_HEADER = "Support/dau-bridging-header.h";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		DAU00013000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../../core/include",
+				);
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/build/lib",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					Foundation,
+					"-framework",
+					AppKit,
+					"-framework",
+					Security,
+					"-framework",
+					SystemConfiguration,
+					"-framework",
+					Carbon,
+					"-framework",
+					ApplicationServices,
+					"-framework",
+					CoreGraphics,
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "io.github.hapo-nghialuu.dau.tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_OBJC_BRIDGING_HEADER = "Support/dau-bridging-header.h";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		DAU00007000000000000001 /* Build configuration list for PBXNativeTarget "Dau" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DAU00013000000000000001 /* Debug */,
+				DAU00013000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DAU00007000000000000002 /* Build configuration list for PBXNativeTarget "DauTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DAU00013000000000000003 /* Debug */,
+				DAU00013000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		DAU00011000000000000001 /* Build configuration list for PBXProject "Dau" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DAU00012000000000000001 /* Debug */,
+				DAU00012000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = DAU00010000000000000001 /* Project object */;
+}

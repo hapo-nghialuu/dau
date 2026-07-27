@@ -231,3 +231,58 @@ fn on_break_does_not_include_brk() {
     assert_eq!(eng.composing(), "");
     assert_eq!(eng.raw(), "");
 }
+
+// ─── Backspace edit keeps raw/commit consistent (TG-03) ───────
+
+#[test]
+fn backspace_does_not_resurrect_deleted_tail_on_space() {
+    // English: after deleting final `e`, Space must not restore full "delete".
+    let mut eng = Engine::new(Method::Telex);
+    eng.set_auto_capitalize(false);
+    eng.set_auto_restore(true);
+    type_keys(&mut eng, "delete");
+    assert_eq!(eng.backspace_one_display_scalar(), Some("delet".into()));
+    // Raw must be re-synced to remaining bases (not the pre-edit key history).
+    assert_eq!(eng.raw(), "delet");
+    assert_eq!(eng.on_break(' ').text, "delet");
+}
+
+#[test]
+fn backspace_escape_uses_post_edit_raw() {
+    let mut eng = Engine::new(Method::Telex);
+    eng.set_auto_capitalize(false);
+    type_keys(&mut eng, "dduwa");
+    assert_eq!(eng.composing(), "đưa");
+    assert_eq!(eng.backspace_one_display_scalar(), Some("đư".into()));
+    // Escape must not revive the deleted final `a` via stale raw "dduwa".
+    // Post-edit raw is base approximation of remaining buffer (`đ`→d, `ư`→u).
+    let escaped = eng.escape();
+    assert_eq!(escaped, "du");
+    assert_eq!(eng.raw(), "du");
+}
+
+#[test]
+fn backspace_then_space_keeps_valid_vietnamese() {
+    let mut eng = Engine::new(Method::Telex);
+    eng.set_auto_capitalize(false);
+    eng.set_auto_restore(true);
+    type_keys(&mut eng, "tieengs");
+    assert_eq!(eng.composing(), "tiếng");
+    assert_eq!(eng.backspace_one_display_scalar(), Some("tiến".into()));
+    assert_eq!(eng.on_break(' ').text, "tiến");
+}
+
+#[test]
+fn backspace_after_escape_pass_through() {
+    let mut eng = Engine::new(Method::Telex);
+    eng.set_auto_capitalize(false);
+    type_keys(&mut eng, "as");
+    assert_eq!(eng.composing(), "á");
+    assert_eq!(eng.escape(), "as");
+    assert_eq!(eng.backspace_one_display_scalar(), Some("a".into()));
+    assert_eq!(eng.composing(), "a");
+    assert_eq!(eng.raw(), "a");
+    // Still pass-through: tone key appends literally.
+    eng.process_char('s', false);
+    assert_eq!(eng.composing(), "as");
+}

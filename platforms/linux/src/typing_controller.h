@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: MIT
+//
+// Consumes core `DauDeltaResult` (display delta). Layout derived from Gõ Nhanh
+// (BSD-3-Clause, Copyright (c) 2025 Gõ Nhanh Contributors). See repo root NOTICE.
 #pragma once
 
 #include <cstdint>
@@ -12,7 +15,7 @@ namespace dau {
 
 enum class KeyKind { Printable, Break, Escape, Modifier, Other };
 
-// Maps DauResult → OutputSink under the active typing strategy. Host-IME free.
+// Maps DauDeltaResult → OutputSink under the active typing strategy. Host-IME free.
 class TypingController {
 public:
     explicit TypingController(RustBridge *bridge);
@@ -43,8 +46,9 @@ private:
     RustBridge *bridge_ = nullptr;
     Strategy strategy_ = Strategy::Preedit;
     bool composing_ = false;
+    // Full host-visible compose string (reconstructed by applying core deltas).
     std::string last_preedit_;
-    // CommitAtom: length (UTF-32 code points) of provisional text already committed.
+    // CommitAtom: length (Unicode scalars) of provisional text already committed.
     uint32_t prov_len_ = 0;
 };
 

@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/hapo-nghialuu/dau/actions/workflows/ci.yml"><img src="https://github.com/hapo-nghialuu/dau/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/version-0.1.0-blue" alt="version 0.1.0">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
+  <img src="https://img.shields.io/badge/license-MIT%20%2B%20BSD--3--Clause-green" alt="MIT + BSD-3-Clause">
   <img src="https://img.shields.io/badge/platform-Linux%20(Fcitx5)-orange" alt="Linux Fcitx5">
 </p>
 
@@ -82,6 +82,9 @@ make check-metadata    # đồng bộ version / license / repo
 
 ## License
 
-[MIT](LICENSE) — Copyright (c) 2026 Dấu Contributors.
+- **MIT** — [LICENSE](LICENSE) — Copyright (c) 2026 Dấu Contributors (primary).
+- **BSD-3-Clause** — portions of the host-facing FFI **display-delta** contract are
+  derived from [Gõ Nhanh](https://github.com/gonhanh/gonhanh)
+  (Copyright (c) 2025, Gõ Nhanh Contributors). Full text and file list: **[NOTICE](NOTICE)**.
 
 Repo: [https://github.com/hapo-nghialuu/dau](https://github.com/hapo-nghialuu/dau)
