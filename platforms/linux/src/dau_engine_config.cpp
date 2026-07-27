@@ -3,6 +3,7 @@
 
 #include <cstdlib>
 #include <string>
+#include <unistd.h>
 
 #include "output_sink.h"
 
@@ -25,16 +26,41 @@ const char *methodLabel(DauConfigMethod m) {
 } // namespace
 
 void DauEngine::loadTomlConfig() {
+    // Shipped profiles (base). First existing path wins.
+    // User config merges on top (user apps[] override shipped keys).
+    static const char *kShippedCandidates[] = {
+        "/usr/share/dau/profiles.toml",
+        "/usr/local/share/dau/profiles.toml",
+        nullptr,
+    };
+    std::string shippedFromHome;
     const char *home = std::getenv("HOME");
+    if (home != nullptr && home[0] != '\0') {
+        shippedFromHome = std::string(home) + "/.local/share/dau/profiles.toml";
+    }
+
+    const char *shippedPath = nullptr;
+    for (const char **p = kShippedCandidates; *p != nullptr; ++p) {
+        if (access(*p, R_OK) == 0) {
+            shippedPath = *p;
+            break;
+        }
+    }
+    if (shippedPath == nullptr && !shippedFromHome.empty() &&
+        access(shippedFromHome.c_str(), R_OK) == 0) {
+        shippedPath = shippedFromHome.c_str();
+    }
+
     std::string userPath;
     if (home != nullptr && home[0] != '\0') {
         userPath = std::string(home) + "/.config/dau/config.toml";
     }
     const char *userCStr = userPath.empty() ? nullptr : userPath.c_str();
-    const bool ok = bridge_.loadConfig(/*shipped=*/nullptr, userCStr);
+    const bool ok = bridge_.loadConfig(shippedPath, userCStr);
     FCITX_LOGC(dau_log, Info)
         << "toml load " << (ok ? "ok" : "skip/fail")
-        << " path=" << (userCStr != nullptr ? userCStr : "(none)");
+        << " shipped=" << (shippedPath != nullptr ? shippedPath : "(none)")
+        << " user=" << (userCStr != nullptr ? userCStr : "(none)");
 }
 
 void DauEngine::applyGuiConfig() {

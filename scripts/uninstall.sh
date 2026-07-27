@@ -66,6 +66,7 @@ CANDIDATES=(
   "${PREFIX}/lib/aarch64-linux-gnu/fcitx5/libdau.so"
   "${PREFIX}/share/fcitx5/addon/dau.conf"
   "${PREFIX}/share/fcitx5/inputmethod/dau.conf"
+  "${PREFIX}/share/dau/profiles.toml"
 )
 
 # Icon sizes used by packaging.
