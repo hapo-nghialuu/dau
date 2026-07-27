@@ -47,14 +47,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Workspace sleep/wake / session observers.
     private var workspaceObservers: [NSObjectProtocol] = []
     private var sleepWakeEngine = SleepWakeLifecycleEngine()
+    /// Held for the app lifetime: App Nap / timer coalescing on an idle accessory app
+    /// delays EventTap servicing + `dau.typing` scheduling past the 12ms budget,
+    /// so the first burst after minutes of idle passes through raw.
+    private var keyboardLatencyActivity: NSObjectProtocol?
 
     // MARK: - NSApplicationDelegate
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
+        // Opt out of App Nap for the whole process (allows idle system sleep).
+        // Launch-time only — never touches the keyboard hot path.
+        keyboardLatencyActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
+            reason: "Dấu keyboard event tap latency"
+        )
+
         // Capability snapshot for inject path — no prompt on launch.
         refreshPostEventAccess(prompt: false)
+        warmUpEventPostChannel()
 
         typingSession.onInjectCompleted = { result in
             if case .failure = result {
@@ -106,6 +118,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Refresh post-access cache off the keyboard hot path when focus changes.
             self?.refreshPostEventAccess(prompt: false)
             self?.refreshProfileCache()
+            // App switch is exactly when the first composed word lands on a cold
+            // post channel + ramping CPU — pre-pay that before the first keystroke.
+            self?.warmUpEventPostChannel()
             self?.syncUI()
         }
         focusObserver.start()
@@ -147,6 +162,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if let keyboardLatencyActivity {
+            ProcessInfo.processInfo.endActivity(keyboardLatencyActivity)
+            self.keyboardLatencyActivity = nil
+        }
         axPollTimer?.invalidate()
         axPollTimer = nil
         unregisterSleepWakeObservers()
@@ -441,6 +460,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ensureToggleHotkeyRegistered()
             typingSession.resetComposeAsync()
             refreshProfileCache()
+            // Post channel can be cold again after sleep — re-pay setup off the hot path.
+            warmUpEventPostChannel()
             syncUI()
             onboarding.refreshStatus()
         }
@@ -450,6 +471,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshPostEventAccess(prompt: Bool) {
         SyntheticPostAccess.refreshFromSystem(prompt: prompt)
         state.applyPostEventAccessMirror(granted: SyntheticPostAccess.cachedGranted)
+    }
+
+    /// Warm the synthetic post path off the hot path (launch / wake / focus change).
+    /// Cold costs measured >12ms callback budget on the first composed word:
+    /// first `CGEventPost` of the process (~10-14ms WindowServer handshake) and
+    /// first keyboard `CGEvent` creation (keyboard-layout fetch). Pay both here:
+    /// build a keyboard event without posting it, then post a marker-tagged null
+    /// event (apps ignore null events).
+    private func warmUpEventPostChannel() {
+        guard SyntheticPostAccess.cachedGranted else { return }
+        DispatchQueue.global(qos: .utility).async {
+            guard let source = CGEventSource(stateID: .privateState)
+                ?? CGEventSource(stateID: .combinedSessionState)
+            else { return }
+            // Keyboard event creation only — never posted, no stray key reaches apps.
+            _ = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
+            guard let event = CGEvent(source: source) else { return }
+            SyntheticEventMarker.apply(to: event)
+            event.post(tap: .cgSessionEventTap)
+        }
     }
 
     // MARK: - Menu / onboarding wiring

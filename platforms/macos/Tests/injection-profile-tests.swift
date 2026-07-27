@@ -347,6 +347,10 @@ final class InjectionProfileTests: XCTestCase {
         let r = resolver.resolve(bundleId: nil)
         XCTAssertEqual(r.source, .safeDefault)
         XCTAssertEqual(r.delays, .zero)
+        // Unknown context must stay ENABLED on the safe default profile —
+        // a nil bundle id right after focus change must never turn typing off.
+        XCTAssertTrue(r.typingEnabled)
+        XCTAssertEqual(r.injectionMethod, .backspaceFast)
     }
 
     func testResolverViaAppContextSnapshot() {

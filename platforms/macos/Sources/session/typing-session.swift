@@ -106,7 +106,10 @@ final class TypingSession {
     init(
         pipeline: MacKeyPipeline = MacKeyPipeline(),
         injector: TextInjector = TextInjector(),
-        queue: DispatchQueue = DispatchQueue(label: TypingSession.queueLabel),
+        // .userInteractive: EventTap callback waits ≤12ms on this queue via group.wait,
+        // which does NOT donate priority. An unspecified-QoS worker gets scheduled late
+        // under app-switch load → budget timeout → compose killed mid-word (focus-change bug).
+        queue: DispatchQueue = DispatchQueue(label: TypingSession.queueLabel, qos: .userInteractive),
         callbackBudgetNanoseconds: UInt64 = TypingSession.defaultCallbackBudgetNanoseconds
     ) {
         self.pipeline = pipeline
