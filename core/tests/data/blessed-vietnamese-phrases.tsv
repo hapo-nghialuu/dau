@@ -1,0 +1,19 @@
+# Format: category<TAB>expected Vietnamese phrase<TAB>canonical Telex keys<TAB>canonical VNI keys
+# Policy: words are space-delimited and reuse the word fixture mapping when present.
+# Tone and shape keys use the same familiar positions as the blessed word mappings.
+# Expected values are manually blessed static data and must never be generated from engine output.
+country	Việt Nam	Vieejt Nam	Vie6t5 Nam
+place	Hà Nội	Haf Nooij	Ha2 No6i5
+education	học sinh	hocj sinh	hoc5 sinh
+work	công việc	coong vieecj	co6ng vie6c5
+greeting	cảm ơn	camr own	cam3 o7n
+time	buổi sáng	buooir sangs	buo6i3 sang1
+place	thành phố	thanhf phoos	thanh2 pho61
+family	gia đình	gia ddinhf	gia d9inh2
+technology	điện thoại	ddieenj thoaij	d9ie6n5 thoai5
+technology	máy tính	mays tinhs	may1 tinh1
+greeting	chào bạn	chaof banj	chao2 ban5
+language	tiếng Việt	tieengs Vieejt	tie6ng1 Vie6t5
+education	nhà trường	nhaf truowngf	nha2 tru7o7ng2
+health	sức khoẻ	suwcs khoer	su7c1 khoe3
+time	buổi tối	buooir toois	buo6i3 to6i1
