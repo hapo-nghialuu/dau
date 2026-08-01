@@ -8,6 +8,8 @@ plans/
 .cafekit.lock
 .claude
 .opencode/
+.agents/
+.codex/
 
 # OS / editor junk
 .DS_Store
