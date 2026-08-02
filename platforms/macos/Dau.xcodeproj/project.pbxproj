@@ -302,6 +302,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = DAU00007000000000000001 /* Build configuration list for PBXNativeTarget "Dau" */;
 			buildPhases = (
+				DAU00008000000000000003 /* Run Script: refresh dau-core */,
 				DAU00008000000000000001 /* Sources */,
 				DAU00004000000000000001 /* Frameworks */,
 				DAU00009000000000000001 /* Resources */,
@@ -451,6 +452,24 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		DAU00008000000000000003 /* Run Script: refresh dau-core */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Run Script: refresh dau-core";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "# Refresh libdau_core.a so direct Xcode/IDE runs do not link a stale Rust core.\nset -euo pipefail\nif [ -f \"$HOME/.cargo/env\" ]; then\n  . \"$HOME/.cargo/env\"\nfi\nCORE_DIR=\"$(cd \"$PROJECT_DIR/../..\" && pwd)/core\"\nLIB_DIR=\"$PROJECT_DIR/build/lib\"\nSUB=release\nif [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  SUB=debug\nfi\nif ! command -v cargo >/dev/null 2>&1; then\n  echo 'error: cargo not found in PATH (install Rust: https://rustup.rs)' >&2\n  exit 1\nfi\necho \"=== dau-core (profile=$SUB, host) ===\"\nif [ \"$SUB\" = debug ]; then\n  cargo build --manifest-path \"$CORE_DIR/Cargo.toml\"\nelse\n  cargo build --manifest-path \"$CORE_DIR/Cargo.toml\" --release\nfi\nSRC=\"$CORE_DIR/target/$SUB/libdau_core.a\"\nif [ ! -f \"$SRC\" ]; then\n  echo \"error: expected static library missing: $SRC\" >&2\n  exit 1\nfi\nmkdir -p \"$LIB_DIR\"\ncp -f \"$SRC\" \"$LIB_DIR/libdau_core.a\"\necho \"Staged: $LIB_DIR/libdau_core.a\"";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXTargetDependency section */
 		DAU0000B000000000000001 /* PBXTargetDependency */ = {

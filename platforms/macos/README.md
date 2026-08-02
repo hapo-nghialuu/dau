@@ -190,6 +190,13 @@ Script **không** ghi TCC database.
 
 Unit / XCTest **xanh không thay** smoke tay. Biên nhận unit: xem `docs/vietnamese-typing-corpus-results.md` và plan TG-06.
 
+### Injection method & AX role (gap-close 2026-08-01)
+
+- **AX role production:** `AppContextResolver` default dùng `AXFocusedRoleProvider` (bounded, ngoài hot path; cache khi focus change). `StubAXRoleProvider` chỉ là test seam, không tham gia runtime.
+- **Role fallback:** `InjectionProfileResolver` áp `roleMethods` khi không có user/shipped bundle profile: `.terminal`→`backspaceFast`, `.editor`→`charByChar`, `.textField`→`backspaceFast`, `.comboBox`→`selection`, `.addressBar`→`emptyCharPrefix`, `.other`→`backspaceFast`.
+- **`selection`** (Shift+Left select rồi replace; text rỗng dùng Backspace thật) và **`emptyCharPrefix`** (post U+202F break autocomplete, xoá `backspace+1`, chèn text) đã **implemented** trong `TextInjector` (`planSelection` / `planEmptyCharPrefix`) — có unit test command ordering/failure. Cả hai thêm **bounded one-time 1ms zero-delay floor** (Gõ Nhanh parity, `well under 12ms budget`): `selection` chờ 1000us một lần trước text khi `settleUs==0`; `emptyCharPrefix` chờ 1000us một lần sau prefix khi `backspaceUs==0` — không per-scalar/per-backspace; user delay > 0 giữ nguyên giá trị.
+- **`syncProxy` vẫn là stub fallback** → `backspaceFast` (declared-only; resolve/inject fallback explicit, log một lần). `axDirect` thật, fallback synthetic khi AX fail.
+
 ### 4. Gợi ý corpus smoke (user tự ghi PASS/FAIL)
 
 | App | Gõ | Kỳ vọng |
@@ -294,7 +301,7 @@ Mở: menu bar → **Cài đặt…** hoặc **Giới thiệu** (About page).
 
 ## Out of scope (sau smoke)
 
-- Full P3 inject matrix (selection / empty prefix / syncProxy / axDirect product)
+- Full P3 inject matrix — `selection`/`emptyCharPrefix`/`axDirect` đã implemented; chỉ còn **`syncProxy`** (game/Electron strict-order) là stub fallback
 - Advanced settings / profile editor UI
 - Developer ID + notarize (P4)
 - Core / Linux product changes
@@ -306,8 +313,9 @@ Mở: menu bar → **Cài đặt…** hoặc **Giới thiệu** (About page).
 | Product HEAD (TG-05) | `7523970` |
 | TG-00 / TG-01..04 | `d678cd4` / `5eb43fc` |
 | `cargo fmt --check` (core) | PASS (2026-07-25; sau `cargo fmt` formatting-only) |
-| `cargo test --manifest-path core/Cargo.toml` | **102** unit + **1** corpus PASS |
-| Corpus | 143 Telex + 143 VNI paired, 34 solo, 0 FAIL |
-| `xcodebuild test … platform=macOS` | **240** tests PASS |
+| `cargo test --manifest-path core/Cargo.toml` | **126** lib unit PASS (re-run 2026-08-01) |
+| English gate | **188** words × **8** breaks raw PASS; **10** intentional VN collisions stay VN |
+| Top-2000 | Telex **2000** PASS + **0** SKIP-KNOWN + **0** FAIL; VNI tương đương |
+| `xcodebuild test … platform=macOS` | **293** tests PASS (re-run 2026-08-01, 0 failures) |
 | Live smoke / idle soak | **user — chưa chạy; không claim PASS** |
 | Chi tiết | `docs/vietnamese-typing-corpus-results.md`, `plans/typing-gaps-dau-vs-gonhanh.md` |

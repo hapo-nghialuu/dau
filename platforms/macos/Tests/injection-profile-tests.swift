@@ -1,5 +1,6 @@
 // Dấu macOS — InjectionProfile / store / resolver unit tests (WP-05).
 
+import Foundation
 import XCTest
 
 final class InjectionProfileTests: XCTestCase {
@@ -19,9 +20,10 @@ final class InjectionProfileTests: XCTestCase {
     // MARK: - TG-05 delivery fallback
 
     func testStubMethodsRequireDeliveryFallback() {
-        XCTAssertTrue(InjectionMethod.selection.requiresDeliveryFallback)
-        XCTAssertTrue(InjectionMethod.emptyCharPrefix.requiresDeliveryFallback)
+        // Only syncProxy remains a declared-only stub; selection/emptyCharPrefix are real now.
         XCTAssertTrue(InjectionMethod.syncProxy.requiresDeliveryFallback)
+        XCTAssertFalse(InjectionMethod.selection.requiresDeliveryFallback)
+        XCTAssertFalse(InjectionMethod.emptyCharPrefix.requiresDeliveryFallback)
         XCTAssertFalse(InjectionMethod.backspaceFast.requiresDeliveryFallback)
         XCTAssertFalse(InjectionMethod.backspaceSlow.requiresDeliveryFallback)
         XCTAssertFalse(InjectionMethod.charByChar.requiresDeliveryFallback)
@@ -29,7 +31,7 @@ final class InjectionProfileTests: XCTestCase {
         XCTAssertFalse(InjectionMethod.passthrough.requiresDeliveryFallback)
     }
 
-    func testProfileSanitizedForDeliveryRewritesStubs() {
+    func testProfileSanitizedForDeliveryKeepsImplementedMethods() {
         let raw = InjectionProfile(
             bundleId: "com.example.App",
             enabled: true,
@@ -38,12 +40,21 @@ final class InjectionProfileTests: XCTestCase {
         )
         XCTAssertEqual(raw.injectionMethod, .selection)
         let clean = raw.sanitizedForDelivery(logFallback: false)
-        XCTAssertEqual(clean.injectionMethod, .backspaceFast)
+        XCTAssertEqual(clean.injectionMethod, .selection)
         XCTAssertEqual(clean.delays, .fast)
         XCTAssertEqual(clean.bundleId, "com.example.App")
+
+        let rawPrefix = InjectionProfile(
+            bundleId: "com.example.App",
+            enabled: true,
+            injectionMethod: .emptyCharPrefix,
+            delays: .fast
+        )
+        let cleanPrefix = rawPrefix.sanitizedForDelivery(logFallback: false)
+        XCTAssertEqual(cleanPrefix.injectionMethod, .emptyCharPrefix)
     }
 
-    func testResolvedSettingsSanitizedForDelivery() {
+    func testResolvedSettingsSanitizedKeepsEmptyCharPrefix() {
         let resolved = ResolvedInjectionSettings(
             typingEnabled: true,
             engineMethod: .telex,
@@ -52,9 +63,9 @@ final class InjectionProfileTests: XCTestCase {
             source: .userOverride
         )
         XCTAssertEqual(resolved.injectionMethod, .emptyCharPrefix)
-        XCTAssertEqual(resolved.deliveryMethod, .backspaceFast)
+        XCTAssertEqual(resolved.deliveryMethod, .emptyCharPrefix)
         let clean = resolved.sanitizedForDelivery(logFallback: false)
-        XCTAssertEqual(clean.injectionMethod, .backspaceFast)
+        XCTAssertEqual(clean.injectionMethod, .emptyCharPrefix)
         XCTAssertEqual(clean.source, .userOverride)
     }
 
@@ -369,6 +380,262 @@ final class InjectionProfileTests: XCTestCase {
         XCTAssertEqual(r.injectionMethod, .backspaceSlow)
     }
 
+    // MARK: - Role fallback layer (P2.3)
+
+    /// Sample shipped TOML with NO per-app rows, so role fallback can be isolated.
+    private let defaultOnlyShipped = """
+    [default]
+    enabled = true
+    injection_method = "backspaceFast"
+    backspace_us = 0
+    settle_us = 0
+    text_us = 0
+    """
+
+    func testRoleFallbackWhenNoBundleProfile() {
+        let (store, defaults, suite) = makeStore(shipped: defaultOnlyShipped)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let resolver = InjectionProfileResolver(store: store)
+        let ctx = AppContextSnapshot(
+            bundleId: "com.unknown.Editor",
+            appName: "Editor",
+            role: .editor,
+            generation: 1
+        )
+        let r = resolver.resolve(context: ctx)
+        XCTAssertEqual(r.source, .roleFallback)
+        XCTAssertEqual(r.injectionMethod, .charByChar)
+        XCTAssertTrue(r.typingEnabled)
+        XCTAssertEqual(r.delays, .zero)
+    }
+
+    func testRoleFallbackMappingPerCategory() {
+        let (store, defaults, suite) = makeStore(shipped: defaultOnlyShipped)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let resolver = InjectionProfileResolver(store: store)
+        let expectations: [AXRoleCategory: InjectionMethod] = [
+            .terminal: .backspaceFast,
+            .editor: .charByChar,
+            .textField: .backspaceFast,
+            .comboBox: .selection,
+            .addressBar: .emptyCharPrefix,
+            .other: .backspaceFast,
+        ]
+        for (role, method) in expectations {
+            let ctx = AppContextSnapshot(bundleId: "com.role.\(role.rawValue)", appName: nil, role: role, generation: 1)
+            let r = resolver.resolve(context: ctx)
+            XCTAssertEqual(r.source, .roleFallback, "role \(role.rawValue)")
+            XCTAssertEqual(r.injectionMethod, method, "role \(role.rawValue)")
+        }
+    }
+
+    func testRoleFallbackRespectsGlobalTypingOff() {
+        let (store, defaults, suite) = makeStore(shipped: defaultOnlyShipped)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let resolver = InjectionProfileResolver(store: store)
+        resolver.globalTypingEnabled = false
+        let ctx = AppContextSnapshot(bundleId: "com.x.Editor", appName: nil, role: .editor, generation: 1)
+        let r = resolver.resolve(context: ctx)
+        XCTAssertEqual(r.source, .roleFallback)
+        XCTAssertFalse(r.typingEnabled)
+        XCTAssertEqual(r.effectiveInjectionMethod, .passthrough)
+    }
+
+    // MARK: - Browser host regression (no broad browser bundle rows)
+
+    /// Known browser address bar must resolve to emptyCharPrefix via role — NOT be
+    /// shadowed by a broad browser bundle row. The real shipped profiles.toml has no
+    /// Safari/Chrome/Chromium rows so the AX role decides browser behavior.
+    func testKnownBrowserAddressBarResolvesToEmptyCharPrefix() {
+        let (store, defaults, suite) = makeStore(shipped: defaultOnlyShipped)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let resolver = InjectionProfileResolver(store: store)
+        let browsers = ["com.apple.Safari", "com.google.Chrome", "org.chromium.Chromium"]
+        for bundleId in browsers {
+            let ctx = AppContextSnapshot(
+                bundleId: bundleId,
+                appName: nil,
+                role: .addressBar,
+                generation: 1
+            )
+            let r = resolver.resolve(context: ctx)
+            XCTAssertEqual(r.source, .roleFallback, "bundle \(bundleId) address bar")
+            XCTAssertEqual(
+                r.injectionMethod,
+                .emptyCharPrefix,
+                "bundle \(bundleId) address bar must use emptyCharPrefix"
+            )
+            XCTAssertTrue(r.typingEnabled)
+        }
+    }
+
+    /// Normal browser text input (editor/textarea role) must resolve to charByChar via role.
+    func testKnownBrowserTextInputResolvesViaRolePolicy() {
+        let (store, defaults, suite) = makeStore(shipped: defaultOnlyShipped)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let resolver = InjectionProfileResolver(store: store)
+        let ctx = AppContextSnapshot(
+            bundleId: "com.apple.Safari",
+            appName: nil,
+            role: .editor,
+            generation: 1
+        )
+        let r = resolver.resolve(context: ctx)
+        XCTAssertEqual(r.source, .roleFallback)
+        XCTAssertEqual(r.injectionMethod, .charByChar)
+    }
+
+    /// Browser AX focus may be inconclusive for contenteditable web inputs. In
+    /// that case use the web-safe text path instead of the terminal-style default.
+    func testKnownBrowserNilRoleUsesCharByCharFallback() {
+        let (store, defaults, suite) = makeStore(shipped: defaultOnlyShipped)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let resolver = InjectionProfileResolver(store: store)
+        let browsers = [
+            "com.brave.Browser",
+            "com.google.Chrome",
+            "com.microsoft.edgemac",
+            "org.mozilla.firefox",
+            "company.thebrowser.Browser",
+        ]
+        for bundleId in browsers {
+            let ctx = AppContextSnapshot(
+                bundleId: bundleId,
+                appName: nil,
+                role: nil,
+                generation: 1
+            )
+            let r = resolver.resolve(context: ctx)
+            XCTAssertEqual(r.source, .roleFallback, "bundle \(bundleId)")
+            XCTAssertEqual(r.injectionMethod, .charByChar, "bundle \(bundleId)")
+            XCTAssertTrue(r.typingEnabled, "bundle \(bundleId)")
+        }
+    }
+
+    /// A broad Safari bundle row must NOT appear in the shipped table (would shadow
+    /// the addressBar role). Guards the shipped file against regression.
+    func testShippedProfilesContainNoBrowserRows() {
+        let url = Bundle.main.url(forResource: "profiles", withExtension: "toml")
+        let raw: String
+        if let url, let contents = try? String(contentsOf: url, encoding: .utf8) {
+            raw = contents
+        } else {
+            // Fallback: parse the repo-shipped shape (no browser rows expected).
+            raw = """
+            [default]
+            injection_method = "backspaceFast"
+            [[apps]]
+            bundle_id = "com.apple.Terminal"
+            injection_method = "backspaceFast"
+            """
+        }
+        let parsed = ShippedProfilesTOML.parse(raw)
+        let browserBundleIds = [
+            "com.apple.Safari",
+            "com.apple.SafariTechnologyPreview",
+            "com.brave.Browser",
+            "com.google.Chrome",
+            "org.chromium.Chromium",
+        ]
+        for bundleId in browserBundleIds {
+            XCTAssertNil(
+                parsed.apps[bundleId],
+                "shipped must not pin browser bundle \(bundleId) — AX role decides"
+            )
+        }
+    }
+
+    /// User override for a known browser must still win over the role policy.
+    func testUserOverrideBeatsBrowserRolePolicy() {
+        let (store, defaults, suite) = makeStore(shipped: defaultOnlyShipped)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        store.setProfile(
+            InjectionProfile(
+                enabled: true,
+                engineMethod: .telex,
+                injectionMethod: .backspaceSlow,
+                delays: .slow
+            ),
+            forBundleId: "com.apple.Safari"
+        )
+        let resolver = InjectionProfileResolver(store: store)
+        let ctx = AppContextSnapshot(
+            bundleId: "com.apple.Safari",
+            appName: nil,
+            role: .addressBar,
+            generation: 1
+        )
+        let r = resolver.resolve(context: ctx)
+        XCTAssertEqual(r.source, .userOverride)
+        XCTAssertEqual(r.injectionMethod, .backspaceSlow)
+    }
+
+    func testRoleFallbackEngineInheritsGlobal() {
+        let (store, defaults, suite) = makeStore(shipped: defaultOnlyShipped)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let resolver = InjectionProfileResolver(store: store)
+        resolver.globalEngineMethod = .vni
+        let ctx = AppContextSnapshot(bundleId: "com.x.Field", appName: nil, role: .textField, generation: 1)
+        let r = resolver.resolve(context: ctx)
+        XCTAssertEqual(r.source, .roleFallback)
+        XCTAssertEqual(r.engineMethod, .vni)
+    }
+
+    func testShippedBundleBeatsRoleFallback() {
+        let (store, defaults, suite) = makeStore(shipped: sampleShipped) // com.apple.Terminal → backspaceSlow
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let resolver = InjectionProfileResolver(store: store)
+        let ctx = AppContextSnapshot(
+            bundleId: "com.apple.Terminal",
+            appName: "Terminal",
+            role: .editor, // conflicting role must NOT beat the shipped bundle row
+            generation: 1
+        )
+        let r = resolver.resolve(context: ctx)
+        XCTAssertEqual(r.source, .shippedBundle)
+        XCTAssertEqual(r.injectionMethod, .backspaceSlow)
+    }
+
+    func testUserOverrideBeatsRoleFallback() {
+        let (store, defaults, suite) = makeStore(shipped: defaultOnlyShipped)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        store.setProfile(
+            InjectionProfile(
+                enabled: true,
+                engineMethod: .telex,
+                injectionMethod: .backspaceSlow,
+                delays: .slow
+            ),
+            forBundleId: "com.x.Editor"
+        )
+        let resolver = InjectionProfileResolver(store: store)
+        let ctx = AppContextSnapshot(bundleId: "com.x.Editor", appName: nil, role: .editor, generation: 1)
+        let r = resolver.resolve(context: ctx)
+        XCTAssertEqual(r.source, .userOverride)
+        XCTAssertEqual(r.injectionMethod, .backspaceSlow)
+    }
+
+    func testRoleFallbackOnlyForKnownRole() {
+        let (store, defaults, suite) = makeStore(shipped: defaultOnlyShipped)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let resolver = InjectionProfileResolver(store: store)
+        let ctx = AppContextSnapshot(bundleId: "com.x.Unknown", appName: nil, role: nil, generation: 1)
+        let r = resolver.resolve(context: ctx)
+        XCTAssertEqual(r.source, .safeDefault)
+        XCTAssertEqual(r.injectionMethod, .backspaceFast)
+    }
+
     // MARK: - AppContextResolver cache
 
     private final class FakeFrontmost: FrontmostAppProviding {
@@ -503,5 +770,163 @@ final class InjectionProfileTests: XCTestCase {
         XCTAssertEqual(front.callCount, 1)
         XCTAssertEqual(context.current.bundleId, "com.apple.Terminal")
         XCTAssertEqual(front.callCount, 1)
+    }
+
+    // MARK: - AX role token classification (pure)
+
+    func testClassifyAddressBarTokens() {
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: "AXTextField", identifier: "url-field"), .addressBar)
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: "AXTextField", description: "Address and Search"), .addressBar)
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: "AXTextField", identifier: "address_bar"), .addressBar)
+    }
+
+    func testClassifyComboBoxAndSearchField() {
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: kAXComboBoxRole as String), .comboBox)
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: "AXUnknown", description: "combobox"), .comboBox)
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: "AXTextField", subrole: kAXSearchFieldSubrole as String), .textField)
+    }
+
+    func testClassifyTerminalTokens() {
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: "AXTextArea", description: "terminal"), .terminal)
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: "AXTextArea", identifier: "tty"), .terminal)
+    }
+
+    func testClassifyEditorTextArea() {
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: kAXTextAreaRole as String), .editor)
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: "AXTextArea", identifier: "code-editor"), .editor)
+    }
+
+    func testClassifyPlainTextField() {
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: kAXTextFieldRole as String), .textField)
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: "AXTextField", identifier: "search"), .textField)
+    }
+
+    func testClassifyInconclusiveReturnsNil() {
+        XCTAssertNil(AXFocusedRoleProvider.category(role: "AXWindow"))
+        XCTAssertNil(AXFocusedRoleProvider.category(role: "AXButton"))
+        XCTAssertNil(AXFocusedRoleProvider.category(role: ""))
+    }
+
+    func testClassifyAddressBarBeatsTextField() {
+        // AddressBar check precedes textField so a URL-ish text field maps to addressBar.
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: "AXTextField", description: "url address"), .addressBar)
+    }
+
+    // MARK: - AXFocusedRoleProvider production wiring (bounded, no real AX in tests)
+
+    func testAXFocusedRoleProviderDefaultsToBoundedAccessor() {
+        // The class is constructible without arguments and its init uses the real
+        // AXTextAccessor with a capped messaging timeout — never blocks the hot path.
+        let provider = AXFocusedRoleProvider()
+        XCTAssertNotNil(provider)
+    }
+
+    // MARK: - Shipped developer-surface contract (real profiles.toml on disk)
+
+    /// Locate the real repo-shipped `Resources/profiles.toml` from the test source
+    /// path. The test bundle has no resource-copy phase (see Dau.xcodeproj), so
+    /// `Bundle.main` cannot reach it — resolving relative to `#filePath` keeps the
+    /// shipped-file guards honest instead of silently falling back to a sample.
+    private func loadRealShippedProfiles() throws -> ShippedProfilesTOML.Parsed {
+        let sourceDir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let resourcesDir = sourceDir
+            .deletingLastPathComponent()   // Tests/
+            .appendingPathComponent("Resources")
+        let url = resourcesDir.appendingPathComponent("profiles.toml")
+        let raw = try String(contentsOf: url, encoding: .utf8)
+        return ShippedProfilesTOML.parse(raw)
+    }
+
+    /// Terminal / AI CLI hosts ship backspaceFast + zero delays (north star).
+    /// Zero-delay is required: ordering vs. physical keys is guaranteed by
+    /// session-tap posting, and any non-zero delay blows the 12ms callback budget.
+    func testShippedTerminalHostsAreBackspaceFastZeroDelay() throws {
+        let parsed = try loadRealShippedProfiles()
+        let terminalHosts = [
+            "com.apple.Terminal",
+            "com.googlecode.iterm2",
+            "net.kovidgoyal.kitty",
+            "com.mitchellh.ghostty",
+            "org.alacritty",
+            "io.alacritty",
+            "com.github.wez.wezterm",
+            "dev.warp.Warp-Stable",
+            "co.zeit.hyper",
+            "org.tabby",
+        ]
+        for bundleId in terminalHosts {
+            let profile = try XCTUnwrap(parsed.apps[bundleId], "shipped row missing for \(bundleId)")
+            XCTAssertEqual(profile.injectionMethod, .backspaceFast, "\(bundleId)")
+            XCTAssertEqual(profile.delays, .zero, "\(bundleId) must ship zero delay")
+        }
+    }
+
+    /// Electron editor / chat hosts ship charByChar — Monaco/Electron textareas are
+    /// repaint-heavy, so per-scalar delivery keeps the provisional display in sync.
+    func testShippedElectronEditorAndChatRowsAreCharByChar() throws {
+        let parsed = try loadRealShippedProfiles()
+        let electronHosts = [
+            "com.microsoft.VSCode",
+            "com.microsoft.VSCodeInsiders",
+            "com.todesktop.cursor",
+            "com.todesktop.230313mzl4w4u92",
+            "notion.id",
+        ]
+        for bundleId in electronHosts {
+            let profile = try XCTUnwrap(parsed.apps[bundleId], "shipped row missing for \(bundleId)")
+            XCTAssertEqual(profile.injectionMethod, .charByChar, "\(bundleId)")
+            XCTAssertEqual(profile.delays, .zero, "\(bundleId)")
+        }
+    }
+
+    /// Native (non-Electron) editor Zed ships backspaceFast — bulk path is reliable.
+    func testShippedNativeEditorZedIsBackspaceFastZeroDelay() throws {
+        let parsed = try loadRealShippedProfiles()
+        let zed = try XCTUnwrap(parsed.apps["dev.zed.Zed"])
+        XCTAssertEqual(zed.injectionMethod, .backspaceFast)
+        XCTAssertEqual(zed.delays, .zero)
+    }
+
+    /// Shipped default stays backspaceFast + zero delay (safe fallback for unknown apps).
+    func testShippedDefaultIsBackspaceFastZeroDelay() throws {
+        let parsed = try loadRealShippedProfiles()
+        XCTAssertEqual(parsed.defaultProfile.injectionMethod, .backspaceFast)
+        XCTAssertEqual(parsed.defaultProfile.delays, .zero)
+    }
+
+    /// Real shipped file: no broad browser bundle rows (would shadow the AX role
+    /// policy). Same guard as the sample-based test, but against the actual file.
+    func testRealShippedProfilesContainNoBrowserRows() throws {
+        let parsed = try loadRealShippedProfiles()
+        let browserBundleIds = [
+            "com.apple.Safari",
+            "com.apple.SafariTechnologyPreview",
+            "com.google.Chrome",
+            "org.chromium.Chromium",
+        ]
+        for bundleId in browserBundleIds {
+            XCTAssertNil(parsed.apps[bundleId], "shipped must not pin browser bundle \(bundleId) — AX role decides")
+        }
+    }
+
+    /// Real shipped file: every row uses an implemented delivery method — no
+    /// declared-only stub that would need a fallback rewrite at runtime.
+    func testRealShippedProfilesUseOnlyImplementedMethods() throws {
+        let parsed = try loadRealShippedProfiles()
+        XCTAssertTrue(
+            parsed.defaultProfile.injectionMethod.isMVPImplemented,
+            "default must not be a declared-only stub"
+        )
+        for (bundle, profile) in parsed.apps {
+            XCTAssertTrue(
+                profile.injectionMethod.isMVPImplemented,
+                "shipped \(bundle) uses unimplemented method \(profile.injectionMethod.rawValue)"
+            )
+            XCTAssertEqual(
+                profile.deliveryMethod,
+                profile.injectionMethod,
+                "shipped \(bundle) should not need fallback rewrite"
+            )
+        }
     }
 }

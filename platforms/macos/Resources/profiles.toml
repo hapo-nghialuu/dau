@@ -2,8 +2,17 @@
 # Loaded by InjectionProfileStore from the app bundle resource `profiles.toml`.
 # User overrides live in UserDefaults and always win at resolve time.
 #
-# Precedence: user override > shipped [[apps]] > [default]
+# Precedence: user override > shipped [[apps]] > AX role fallback > [default]
 # Default MVP: backspaceFast + zero delays.
+#
+# Shipped rows exist ONLY where bundle-specific behavior is necessary for
+# developer surfaces (terminals, Electron code editors). Apps without a row —
+# including browser host apps (Safari / Chrome / Chromium) — fall back to the
+# AX role policy in InjectionProfileResolver (editor/textarea → charByChar,
+# combo/search → selection, address bar → emptyCharPrefix, terminal/textField →
+# backspaceFast). When browser AX focus is inconclusive, the resolver uses a
+# browser-specific charByChar fallback. A broad browser bundle row would shadow
+# addressBar/editor role policy, so browser handling stays in the resolver.
 
 [default]
 enabled = true
@@ -13,7 +22,6 @@ settle_us = 0
 text_us = 0
 
 # --- Terminals / AI CLI hosts (north star) ---
-# Terminal-class list ported from Gõ Nhanh (BSD-3-Clause — see NOTICE).
 # Zero delays: ordering vs. physical keys is guaranteed by session-tap posting
 # (private event source), and destructive injects must stay under the 12ms
 # callback budget — usleep on the session queue oversleeps several ms per call,
@@ -22,7 +30,7 @@ text_us = 0
 [[apps]]
 bundle_id = "com.apple.Terminal"
 enabled = true
-injection_method = "backspaceSlow"
+injection_method = "backspaceFast"
 backspace_us = 0
 settle_us = 0
 text_us = 0
@@ -30,7 +38,7 @@ text_us = 0
 [[apps]]
 bundle_id = "com.googlecode.iterm2"
 enabled = true
-injection_method = "backspaceSlow"
+injection_method = "backspaceFast"
 backspace_us = 0
 settle_us = 0
 text_us = 0
@@ -38,7 +46,7 @@ text_us = 0
 [[apps]]
 bundle_id = "net.kovidgoyal.kitty"
 enabled = true
-injection_method = "backspaceSlow"
+injection_method = "backspaceFast"
 backspace_us = 0
 settle_us = 0
 text_us = 0
@@ -46,7 +54,7 @@ text_us = 0
 [[apps]]
 bundle_id = "com.mitchellh.ghostty"
 enabled = true
-injection_method = "backspaceSlow"
+injection_method = "backspaceFast"
 backspace_us = 0
 settle_us = 0
 text_us = 0
@@ -54,7 +62,7 @@ text_us = 0
 [[apps]]
 bundle_id = "org.alacritty"
 enabled = true
-injection_method = "backspaceSlow"
+injection_method = "backspaceFast"
 backspace_us = 0
 settle_us = 0
 text_us = 0
@@ -62,7 +70,7 @@ text_us = 0
 [[apps]]
 bundle_id = "io.alacritty"
 enabled = true
-injection_method = "backspaceSlow"
+injection_method = "backspaceFast"
 backspace_us = 0
 settle_us = 0
 text_us = 0
@@ -70,7 +78,7 @@ text_us = 0
 [[apps]]
 bundle_id = "com.github.wez.wezterm"
 enabled = true
-injection_method = "backspaceSlow"
+injection_method = "backspaceFast"
 backspace_us = 0
 settle_us = 0
 text_us = 0
@@ -78,7 +86,7 @@ text_us = 0
 [[apps]]
 bundle_id = "dev.warp.Warp-Stable"
 enabled = true
-injection_method = "backspaceSlow"
+injection_method = "backspaceFast"
 backspace_us = 0
 settle_us = 0
 text_us = 0
@@ -86,7 +94,7 @@ text_us = 0
 [[apps]]
 bundle_id = "co.zeit.hyper"
 enabled = true
-injection_method = "backspaceSlow"
+injection_method = "backspaceFast"
 backspace_us = 0
 settle_us = 0
 text_us = 0
@@ -94,17 +102,19 @@ text_us = 0
 [[apps]]
 bundle_id = "org.tabby"
 enabled = true
-injection_method = "backspaceSlow"
+injection_method = "backspaceFast"
 backspace_us = 0
 settle_us = 0
 text_us = 0
 
-# Editors / AI CLI hosts (best-effort bundle ids)
+# --- Electron code editors / AI CLI hosts ---
+# Monaco / Electron textareas are repaint-heavy; per-scalar delivery keeps the
+# provisional display in sync and avoids wholesale-rewrite races.
 
 [[apps]]
 bundle_id = "com.microsoft.VSCode"
 enabled = true
-injection_method = "backspaceSlow"
+injection_method = "charByChar"
 backspace_us = 0
 settle_us = 0
 text_us = 0
@@ -112,7 +122,7 @@ text_us = 0
 [[apps]]
 bundle_id = "com.microsoft.VSCodeInsiders"
 enabled = true
-injection_method = "backspaceSlow"
+injection_method = "charByChar"
 backspace_us = 0
 settle_us = 0
 text_us = 0
@@ -120,15 +130,7 @@ text_us = 0
 [[apps]]
 bundle_id = "com.todesktop.cursor"
 enabled = true
-injection_method = "backspaceSlow"
-backspace_us = 0
-settle_us = 0
-text_us = 0
-
-[[apps]]
-bundle_id = "dev.zed.Zed"
-enabled = true
-injection_method = "backspaceSlow"
+injection_method = "charByChar"
 backspace_us = 0
 settle_us = 0
 text_us = 0
@@ -136,7 +138,26 @@ text_us = 0
 [[apps]]
 bundle_id = "com.todesktop.230313mzl4w4u92"
 enabled = true
-injection_method = "backspaceSlow"
+injection_method = "charByChar"
+backspace_us = 0
+settle_us = 0
+text_us = 0
+
+[[apps]]
+bundle_id = "notion.id"
+enabled = true
+injection_method = "charByChar"
+backspace_us = 0
+settle_us = 0
+text_us = 0
+
+# --- Native editors ---
+# Zed is a native (non-Electron) editor; bulk backspace + Unicode is reliable.
+
+[[apps]]
+bundle_id = "dev.zed.Zed"
+enabled = true
+injection_method = "backspaceFast"
 backspace_us = 0
 settle_us = 0
 text_us = 0

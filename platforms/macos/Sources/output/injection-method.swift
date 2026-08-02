@@ -11,12 +11,10 @@ enum InjectionMethod: String, Codable, CaseIterable, Sendable, Equatable {
     /// Same sequence as `backspaceFast` with higher delays (slow render / Electron).
     case backspaceSlow
     /// Shift+Left selection then replace; empty text uses real Backspace.
-    /// Declared-only for MVP — resolve/inject must fall back explicitly.
     case selection
     /// Backspace then post text one Unicode scalar/chunk at a time.
     case charByChar
     /// Empty/narrow prefix to break autocomplete, then replace.
-    /// Declared-only for MVP — resolve/inject must fall back explicitly.
     case emptyCharPrefix
     /// Post via `CGEventTapProxy` for strict in-callback ordering.
     /// Declared-only for MVP — resolve/inject must fall back explicitly.
@@ -45,24 +43,28 @@ enum InjectionMethod: String, Codable, CaseIterable, Sendable, Equatable {
     /// True when a real delivery path is implemented (not a declared-only stub).
     ///
     /// - `backspaceFast` / `backspaceSlow` / `charByChar` / `passthrough`: full synthetic path.
+    /// - `selection` / `emptyCharPrefix`: real Shift+Left select + empty-prefix plans.
     /// - `axDirect`: real AX attempt with explicit synthetic fallback.
-    /// - `selection` / `emptyCharPrefix` / `syncProxy`: declared-only stubs.
+    /// - `syncProxy`: declared-only stub — resolves/injects must fall back explicitly.
     var isMVPImplemented: Bool {
         switch self {
-        case .backspaceFast, .backspaceSlow, .charByChar, .passthrough, .axDirect:
+        case .backspaceFast, .backspaceSlow, .charByChar, .passthrough, .axDirect,
+             .selection, .emptyCharPrefix:
             return true
-        case .selection, .emptyCharPrefix, .syncProxy:
+        case .syncProxy:
             return false
         }
     }
 
     /// Delivery method that is actually implemented.
-    /// Declared-only stubs map explicitly to `backspaceFast` (never silent stub plans).
+    /// The declared-only `syncProxy` stub maps explicitly to `backspaceFast`
+    /// (never silent stub plans); every other method is delivered as itself.
     var deliveryImplementation: InjectionMethod {
         switch self {
-        case .backspaceFast, .backspaceSlow, .charByChar, .passthrough, .axDirect:
+        case .backspaceFast, .backspaceSlow, .charByChar, .passthrough, .axDirect,
+             .selection, .emptyCharPrefix:
             return self
-        case .selection, .emptyCharPrefix, .syncProxy:
+        case .syncProxy:
             return .backspaceFast
         }
     }

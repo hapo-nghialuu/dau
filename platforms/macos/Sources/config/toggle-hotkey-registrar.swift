@@ -54,7 +54,7 @@ private func dauModifierChordTapCallback(
         }
         return Unmanaged.passUnretained(event)
     }
-    registrar.handleFlagsEvent(event)
+    registrar.handleModifierTapEvent(type: type, event: event)
     return Unmanaged.passUnretained(event)
 }
 
@@ -84,6 +84,7 @@ final class ToggleHotkeyRegistrar {
     private var modifierOnlyHotkey: ToggleHotkey?
     /// True after we have seen the exact chord down; fire once on first full match.
     private var modifierChordArmed = false
+    private var modifierChordCancelled = false
     private var lastModifierMatch = false
     /// Metadata for retry logs — never key content.
     private var lastRegisterKind: String = "none"
@@ -135,6 +136,7 @@ final class ToggleHotkeyRegistrar {
         stopModifierTap()
         modifierOnlyHotkey = nil
         modifierChordArmed = false
+        modifierChordCancelled = false
         lastModifierMatch = false
         isRegistered = false
     }
@@ -157,7 +159,19 @@ final class ToggleHotkeyRegistrar {
         onHotkey?()
     }
 
-    fileprivate func handleFlagsEvent(_ event: CGEvent) {
+    func handleModifierTapEvent(type: CGEventType, event: CGEvent) {
+        guard modifierOnlyHotkey != nil else { return }
+        if type == .keyDown {
+            if modifierChordArmed || lastModifierMatch {
+                modifierChordCancelled = true
+            }
+            return
+        }
+        guard type == .flagsChanged else { return }
+        handleFlagsEvent(event)
+    }
+
+    private func handleFlagsEvent(_ event: CGEvent) {
         guard let target = modifierOnlyHotkey else { return }
         let flags = event.flags
         let command = flags.contains(.maskCommand)
@@ -170,14 +184,22 @@ final class ToggleHotkeyRegistrar {
             option: option,
             shift: shift
         )
-        // Fire once when chord becomes fully held (edge up on match).
+        // Modifier-only chords fire on release, not on press. This lets real
+        // shortcuts such as Cmd+Shift+4 cancel the pending toggle with keyDown.
         if matches && !lastModifierMatch {
             lastModifierMatch = true
-            DispatchQueue.main.async { [weak self] in
-                self?.fireHotkey()
-            }
+            modifierChordArmed = true
+            modifierChordCancelled = false
         } else if !matches {
+            let shouldFire = lastModifierMatch && modifierChordArmed && !modifierChordCancelled
             lastModifierMatch = false
+            modifierChordArmed = false
+            modifierChordCancelled = false
+            if shouldFire {
+                DispatchQueue.main.async { [weak self] in
+                    self?.fireHotkey()
+                }
+            }
         }
     }
 
@@ -226,13 +248,18 @@ final class ToggleHotkeyRegistrar {
             if forced {
                 modifierOnlyHotkey = hotkey
                 lastModifierMatch = false
+                modifierChordArmed = false
+                modifierChordCancelled = false
             }
             return
         }
         modifierOnlyHotkey = hotkey
         lastModifierMatch = false
+        modifierChordArmed = false
+        modifierChordCancelled = false
         let pointer = Unmanaged.passUnretained(self).toOpaque()
         let mask = CGEventMask(1) << CGEventType.flagsChanged.rawValue
+            | CGEventMask(1) << CGEventType.keyDown.rawValue
             | CGEventMask(1) << CGEventType.tapDisabledByTimeout.rawValue
             | CGEventMask(1) << CGEventType.tapDisabledByUserInput.rawValue
 

@@ -93,6 +93,8 @@ struct InjectionProfile: Codable, Equatable, Sendable {
 enum ProfileResolutionSource: String, Sendable, Equatable {
     case userOverride
     case shippedBundle
+    /// Role-based fallback for apps with no user / shipped bundle profile.
+    case roleFallback
     case safeDefault
 }
 

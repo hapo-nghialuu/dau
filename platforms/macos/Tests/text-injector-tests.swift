@@ -186,27 +186,138 @@ final class TextInjectorTests: XCTestCase {
         XCTAssertTrue(sink.commands.isEmpty)
     }
 
-    // MARK: - Stub methods fall back explicitly (TG-05)
+    // MARK: - Implemented methods (selection / emptyCharPrefix real, syncProxy stub fallback)
 
-    func testSelectionFallsBackToBackspaceFastPlan() {
+    func testSelectionPlansShiftLeftThenText() {
         let plan = injector.plan(backspace: 2, text: "hi", method: .selection, delays: .zero)
-        XCTAssertEqual(plan, [.backspace, .backspace, .unicodeChunk("hi")])
+        XCTAssertEqual(plan, [
+            .shiftLeft, .shiftLeft,
+            .wait(microseconds: 1000), // settle floor before replacement
+            .unicodeChunk("hi"),
+        ])
         let result = injector.inject(backspace: 2, text: "hi", method: .selection, delays: .zero)
         assertSuccess(result)
-        XCTAssertEqual(sink.commands, [.backspace, .backspace, .unicodeChunk("hi")])
-        XCTAssertFalse(sink.commands.contains(.shiftLeft), "must not use silent selection stub")
+        XCTAssertEqual(sink.commands, [.shiftLeft, .shiftLeft, .unicodeChunk("hi")])
     }
 
-    func testEmptyCharPrefixFallsBackToBackspaceFast() {
-        let result = injector.inject(
-            backspace: 1,
-            text: "a",
-            method: .emptyCharPrefix,
-            delays: .zero
-        )
+    func testSelectionWithEmptyTextUsesBackspace() {
+        let plan = injector.plan(backspace: 2, text: "", method: .selection, delays: .zero)
+        XCTAssertEqual(plan, [.backspace, .backspace])
+        let result = injector.inject(backspace: 2, text: "", method: .selection, delays: .zero)
         assertSuccess(result)
-        XCTAssertEqual(sink.commands, [.backspace, .unicodeChunk("a")])
-        XCTAssertFalse(sink.commands.contains(.emptyPrefix), "must not use silent emptyPrefix stub")
+        XCTAssertEqual(sink.commands, [.backspace, .backspace])
+        XCTAssertFalse(sink.commands.contains(.shiftLeft), "empty wipe must not Shift+Left-select whitespace")
+    }
+
+    func testSelectionPreservesNonzeroSettle() {
+        // Nonzero user settleUs is preserved unchanged — no 1000us floor override.
+        let delays = DelayPreset(backspaceUs: 0, settleUs: 3000, textUs: 0)
+        let plan = injector.plan(backspace: 1, text: "x", method: .selection, delays: delays)
+        XCTAssertEqual(plan, [
+            .shiftLeft,
+            .wait(microseconds: 3000),
+            .unicodeChunk("x"),
+        ])
+    }
+
+    func testSelectionKeepsExactSubMillisecondSettle() {
+        // Gõ Nhanh conditional semantics: settle > 0 ? settle : 1000. A 500us
+        // configured settle must NOT be raised to the 1000us floor.
+        let delays = DelayPreset(backspaceUs: 0, settleUs: 500, textUs: 0)
+        let plan = injector.plan(backspace: 1, text: "x", method: .selection, delays: delays)
+        XCTAssertEqual(plan, [
+            .shiftLeft,
+            .wait(microseconds: 500),
+            .unicodeChunk("x"),
+        ])
+    }
+
+    func testSelectionZeroSettleAddsFloorOnceNotPerScalar() {
+        // Floor is exactly one 1000us wait for the batch — never one per selected scalar.
+        let plan = injector.plan(backspace: 3, text: "xyz", method: .selection, delays: .zero)
+        let waits = plan.compactMap { cmd -> UInt32? in
+            if case .wait(let us) = cmd { return us }
+            return nil
+        }
+        XCTAssertEqual(waits, [1000], "exactly one 1000us floor for the whole Shift+Left batch")
+        XCTAssertEqual(plan, [
+            .shiftLeft, .shiftLeft, .shiftLeft,
+            .wait(microseconds: 1000),
+            .unicodeChunk("xyz"),
+        ])
+    }
+
+    func testEmptyCharPrefixPlansPrefixThenBackspacesThenText() {
+        let plan = injector.plan(backspace: 1, text: "a", method: .emptyCharPrefix, delays: .zero)
+        XCTAssertEqual(plan, [
+            .emptyPrefix,
+            .wait(microseconds: 1000), // floor after prefix before deletions
+            .backspace, .backspace,
+            .unicodeChunk("a"),
+        ])
+        let result = injector.inject(backspace: 1, text: "a", method: .emptyCharPrefix, delays: .zero)
+        assertSuccess(result)
+        XCTAssertEqual(sink.commands, [.emptyPrefix, .backspace, .backspace, .unicodeChunk("a")])
+    }
+
+    func testEmptyCharPrefixEmptyTextStillPostsPrefixAndWipes() {
+        let plan = injector.plan(backspace: 1, text: "", method: .emptyCharPrefix, delays: .zero)
+        XCTAssertEqual(plan, [
+            .emptyPrefix,
+            .wait(microseconds: 1000),
+            .backspace, .backspace,
+        ])
+        let result = injector.inject(backspace: 1, text: "", method: .emptyCharPrefix, delays: .zero)
+        assertSuccess(result)
+        XCTAssertEqual(sink.commands, [.emptyPrefix, .backspace, .backspace])
+    }
+
+    func testEmptyCharPrefixKeepsExactSubMillisecondBackspaceDelay() {
+        // Gõ Nhanh conditional semantics: backspace delay > 0 ? delay : 1000.
+        // A 500us configured delay must NOT be raised to the 1000us floor.
+        let delays = DelayPreset(backspaceUs: 500, settleUs: 0, textUs: 0)
+        let plan = injector.plan(backspace: 1, text: "a", method: .emptyCharPrefix, delays: delays)
+        XCTAssertEqual(plan, [
+            .emptyPrefix,
+            .wait(microseconds: 500),
+            .backspace,
+            .wait(microseconds: 500), // per-backspace wait (backspaceUs > 0)
+            .backspace,
+            .wait(microseconds: 500),
+            .unicodeChunk("a"),
+        ])
+    }
+
+    func testEmptyCharPrefixPreservesNonzeroBackspaceDelay() {
+        // Nonzero user backspaceUs is preserved unchanged — the 1000us floor does not
+        // override it (per-backspace waits are also retained, as in backspaceFast).
+        let delays = DelayPreset(backspaceUs: 2000, settleUs: 0, textUs: 0)
+        let plan = injector.plan(backspace: 1, text: "a", method: .emptyCharPrefix, delays: delays)
+        XCTAssertEqual(plan, [
+            .emptyPrefix,
+            .wait(microseconds: 2000), // floor = nonzero user delay, not 1000
+            .backspace,
+            .wait(microseconds: 2000), // per-backspace wait (backspaceUs > 0)
+            .backspace,
+            .wait(microseconds: 2000),
+            .unicodeChunk("a"),
+        ])
+    }
+
+    func testEmptyCharPrefixFloorAddedOnceNotPerBackspace() {
+        // Zero delays → floor is exactly one 1000us wait after the prefix, plus
+        // backspaces and text (no per-backspace waits).
+        let plan = injector.plan(backspace: 3, text: "", method: .emptyCharPrefix, delays: .zero)
+        let waits = plan.compactMap { cmd -> UInt32? in
+            if case .wait(let us) = cmd { return us }
+            return nil
+        }
+        XCTAssertEqual(waits, [1000], "exactly one 1000us floor after prefix, none per backspace")
+        XCTAssertEqual(plan, [
+            .emptyPrefix,
+            .wait(microseconds: 1000),
+            .backspace, .backspace, .backspace, .backspace, // prefix + 3 composed scalars
+        ])
     }
 
     func testSyncProxyFallsBackToBackspaceFast() {
@@ -218,6 +329,40 @@ final class TextInjectorTests: XCTestCase {
         )
         assertSuccess(result)
         XCTAssertEqual(sink.commands, [.backspace, .unicodeChunk("b")])
+    }
+
+    func testSelectionSinkFailureDoesNotReportSuccess() {
+        // Plan: shiftLeft, shiftLeft, unicode — fail on the second shiftLeft.
+        sink.failAtCommandIndex = 2
+        let result = injector.inject(backspace: 2, text: "hi", method: .selection, delays: .zero)
+        switch result {
+        case .success:
+            XCTFail("must not report success after selection batch failure")
+        case .failure(let err):
+            if case .sinkFailed = err {
+                // expected
+            } else {
+                XCTFail("expected sinkFailed, got \(err)")
+            }
+        }
+        XCTAssertEqual(sink.commands, [.shiftLeft, .shiftLeft], "must stop after failed command")
+    }
+
+    func testEmptyCharPrefixSinkFailureDoesNotReportSuccess() {
+        // Plan: emptyPrefix, BS, BS, unicode — fail on the first backspace.
+        sink.failAtCommandIndex = 2
+        let result = injector.inject(backspace: 1, text: "a", method: .emptyCharPrefix, delays: .zero)
+        switch result {
+        case .success:
+            XCTFail("must not report success after empty-prefix batch failure")
+        case .failure(let err):
+            if case .sinkFailed = err {
+                // expected
+            } else {
+                XCTFail("expected sinkFailed, got \(err)")
+            }
+        }
+        XCTAssertEqual(sink.commands, [.emptyPrefix, .backspace], "must stop after failed command")
     }
 
     func testAxDirectFallbackWhenAXUnavailable() {
@@ -328,10 +473,11 @@ final class TextInjectorTests: XCTestCase {
         XCTAssertEqual(InjectionMethod.passthrough.defaultDelays, .zero)
         XCTAssertTrue(InjectionMethod.backspaceFast.isMVPImplemented)
         XCTAssertTrue(InjectionMethod.axDirect.isMVPImplemented)
-        XCTAssertFalse(InjectionMethod.selection.isMVPImplemented)
-        XCTAssertFalse(InjectionMethod.emptyCharPrefix.isMVPImplemented)
+        XCTAssertTrue(InjectionMethod.selection.isMVPImplemented)
+        XCTAssertTrue(InjectionMethod.emptyCharPrefix.isMVPImplemented)
         XCTAssertFalse(InjectionMethod.syncProxy.isMVPImplemented)
-        XCTAssertEqual(InjectionMethod.selection.deliveryImplementation, .backspaceFast)
+        XCTAssertEqual(InjectionMethod.selection.deliveryImplementation, .selection)
+        XCTAssertEqual(InjectionMethod.emptyCharPrefix.deliveryImplementation, .emptyCharPrefix)
         XCTAssertEqual(InjectionMethod.syncProxy.deliveryImplementation, .backspaceFast)
         XCTAssertEqual(InjectionMethod.backspaceSlow.deliveryImplementation, .backspaceSlow)
     }
@@ -413,5 +559,37 @@ final class TextInjectorTests: XCTestCase {
         }
         // Only one successful BS applied before fail.
         XCTAssertEqual(doc.content, "hell")
+    }
+
+    // MARK: - Developer-surface contract → plan ordering (gap-6 matrix)
+
+    /// Locks the plan shape each developer surface resolves to. Ordering prevents
+    /// lost/duplicated characters: combo/search = Shift+Left selection before text;
+    /// address bar = empty-prefix guard before deletions; terminal/textField =
+    /// backspaceFast; editor/textarea = per-scalar delivery.
+    func testDeveloperSurfaceContractPlans() {
+        // comboBox / search → selection: Shift+Left then text, no backspace.
+        let combo = injector.plan(backspace: 2, text: "vi", method: .selection, delays: .zero)
+        XCTAssertEqual(
+            combo.filter { if case .wait = $0 { return false }; return true },
+            [.shiftLeft, .shiftLeft, .unicodeChunk("vi")]
+        )
+
+        // addressBar → emptyCharPrefix: prefix guard, floor, deletions, then text.
+        let bar = injector.plan(backspace: 1, text: "a", method: .emptyCharPrefix, delays: .zero)
+        XCTAssertEqual(bar, [
+            .emptyPrefix,
+            .wait(microseconds: 1000), // floor after prefix before deletions
+            .backspace, .backspace,
+            .unicodeChunk("a"),
+        ])
+
+        // terminal / textField → backspaceFast: backspaces then bulk text.
+        let field = injector.plan(backspace: 2, text: "vi", method: .backspaceFast, delays: .zero)
+        XCTAssertEqual(field, [.backspace, .backspace, .unicodeChunk("vi")])
+
+        // editor / textarea → charByChar: one unicode chunk per scalar.
+        let editor = injector.plan(backspace: 1, text: "vi", method: .charByChar, delays: .zero)
+        XCTAssertEqual(editor, [.backspace, .unicodeChunk("v"), .unicodeChunk("i")])
     }
 }

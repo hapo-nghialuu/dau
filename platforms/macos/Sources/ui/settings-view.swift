@@ -440,6 +440,7 @@ struct SettingsRootView: View {
         }
         .frame(minWidth: 640, minHeight: 420)
         .background(Color(nsColor: .windowBackgroundColor))
+        .tint(Color(nsColor: .dauBrandOrange))
     }
 
     private var sidebar: some View {
@@ -627,7 +628,7 @@ struct SettingsGeneralPage: View {
                     HStack {
                         Text("Hướng dẫn cấp quyền (onboarding)…")
                             .font(.system(size: 12))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(Color(nsColor: .dauBrandOrange))
                         Spacer()
                     }
                     .padding(.horizontal, 12)
@@ -652,7 +653,7 @@ struct SettingsGeneralPage: View {
                         : "Toàn cục · 2 modifier (⌘⇧) hoặc modifier + phím"
                 )
                 .font(.system(size: 11))
-                .foregroundStyle(hotkeyRecorder.isRecording ? Color.accentColor : .secondary)
+                .foregroundStyle(hotkeyRecorder.isRecording ? Color(nsColor: .dauBrandOrange) : .secondary)
             }
             Spacer(minLength: 8)
             Text(
@@ -670,7 +671,7 @@ struct SettingsGeneralPage: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .stroke(
-                            hotkeyRecorder.isRecording ? Color.accentColor : Color(nsColor: .separatorColor),
+                            hotkeyRecorder.isRecording ? Color(nsColor: .dauBrandOrange) : Color(nsColor: .separatorColor),
                             lineWidth: 1
                         )
                 )
@@ -730,6 +731,7 @@ struct SettingsGeneralPage: View {
             Toggle("", isOn: isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
+                .tint(Color(nsColor: .dauBrandOrange))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -847,6 +849,7 @@ struct SettingsAdvancedPage: View {
         switch source {
         case .userOverride: return "user override"
         case .shippedBundle: return "shipped profiles.toml"
+        case .roleFallback: return "role fallback"
         case .safeDefault: return "safe default"
         }
     }

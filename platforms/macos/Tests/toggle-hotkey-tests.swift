@@ -1,6 +1,7 @@
 // Dấu macOS — unit tests for ToggleHotkey model.
 
 import Carbon
+import CoreGraphics
 import XCTest
 
 final class ToggleHotkeyTests: XCTestCase {
@@ -215,6 +216,65 @@ final class ToggleHotkeyTests: XCTestCase {
         XCTAssertEqual(reg.registrationGeneration, gen &+ 1)
     }
 
+    func testModifierOnlyFiresOnPureChordRelease() {
+        let reg = ToggleHotkeyRegistrar()
+        defer { reg.unregister() }
+        reg.testForceRegistrationResult = true
+        reg.register(ToggleHotkey.commandShiftOnly)
+
+        let fired = expectation(description: "pure modifier chord fires")
+        reg.onHotkey = {
+            fired.fulfill()
+        }
+
+        reg.handleModifierTapEvent(
+            type: .flagsChanged,
+            event: makeCGEvent(flags: [.maskCommand])
+        )
+        reg.handleModifierTapEvent(
+            type: .flagsChanged,
+            event: makeCGEvent(flags: [.maskCommand, .maskShift])
+        )
+        reg.handleModifierTapEvent(
+            type: .flagsChanged,
+            event: makeCGEvent(flags: [.maskCommand])
+        )
+
+        wait(for: [fired], timeout: 1.0)
+    }
+
+    func testModifierOnlyDoesNotFireDuringCommandShift4ScreenshotShortcut() {
+        let reg = ToggleHotkeyRegistrar()
+        defer { reg.unregister() }
+        reg.testForceRegistrationResult = true
+        reg.register(ToggleHotkey.commandShiftOnly)
+
+        let notFired = expectation(description: "screenshot shortcut must not toggle")
+        notFired.isInverted = true
+        reg.onHotkey = {
+            notFired.fulfill()
+        }
+
+        reg.handleModifierTapEvent(
+            type: .flagsChanged,
+            event: makeCGEvent(flags: [.maskCommand])
+        )
+        reg.handleModifierTapEvent(
+            type: .flagsChanged,
+            event: makeCGEvent(flags: [.maskCommand, .maskShift])
+        )
+        reg.handleModifierTapEvent(
+            type: .keyDown,
+            event: makeCGEvent(flags: [.maskCommand, .maskShift], keyCode: 21)
+        )
+        reg.handleModifierTapEvent(
+            type: .flagsChanged,
+            event: makeCGEvent(flags: [.maskCommand])
+        )
+
+        wait(for: [notFired], timeout: 0.2)
+    }
+
     func testCarbonBranchTracksForcedFailureAndSuccess() {
         let reg = ToggleHotkeyRegistrar()
         defer { reg.unregister() }
@@ -231,4 +291,10 @@ final class ToggleHotkeyTests: XCTestCase {
         XCTAssertFalse(reg.lastRegisterAttemptFailed)
     }
 
+}
+
+private func makeCGEvent(flags: CGEventFlags, keyCode: CGKeyCode = 0) -> CGEvent {
+    let event = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true)!
+    event.flags = flags
+    return event
 }

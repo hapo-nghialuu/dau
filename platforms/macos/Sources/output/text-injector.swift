@@ -114,7 +114,7 @@ enum InjectorCommand: Equatable, Sendable {
     case backspace
     case unicodeChunk(String)
     case wait(microseconds: UInt32)
-    /// Shift+Left once (legacy stub plan structure; delivery falls back before execute).
+    /// Shift+Left once (select one scalar to the left for `.selection` replacement).
     case shiftLeft
     /// Narrow no-break space used to poke autocomplete (U+202F).
     case emptyPrefix
@@ -193,6 +193,9 @@ final class RecordingEventSink: InjectorEventSink {
 /// Models what a focused text field would contain after physical keys + synthetic inject.
 final class FakeTargetDocument: InjectorEventSink {
     private(set) var content: String = ""
+    /// Scalars selected to the left of the cursor by `.shiftLeft` posts.
+    /// When > 0, the next Unicode post (or Backspace) replaces the selected region.
+    private var selectedCount: Int = 0
     /// When false, the next sink post fails (and is not applied).
     var shouldSucceed: Bool = true
     /// Fail only the Nth post (1-based). `nil` = use `shouldSucceed`.
@@ -204,12 +207,14 @@ final class FakeTargetDocument: InjectorEventSink {
         postIndex = 0
         shouldSucceed = true
         failAtCommandIndex = nil
+        selectedCount = 0
     }
 
     /// Seed document content for unit tests (not used by production inject path).
     func seed(_ text: String) {
         content = text
         postIndex = 0
+        selectedCount = 0
     }
 
     /// Apply a physical key that the EventTap passed through (not consumed).
@@ -231,24 +236,47 @@ final class FakeTargetDocument: InjectorEventSink {
         return shouldSucceed
     }
 
+    /// Remove the current selection (scalars to the left of the cursor).
+    private func removeSelection() {
+        var scalars = Array(content.unicodeScalars)
+        let drop = min(selectedCount, scalars.count)
+        if drop > 0 {
+            scalars.removeLast(drop)
+        }
+        content = String(String.UnicodeScalarView(scalars))
+        selectedCount = 0
+    }
+
     @discardableResult
     func postBackspace() -> Bool {
         guard beginPost() else { return false }
-        applyPhysicalBackspace()
+        if selectedCount > 0 {
+            removeSelection()
+        } else {
+            applyPhysicalBackspace()
+        }
         return true
     }
 
     @discardableResult
     func postUnicode(_ text: String) -> Bool {
         guard beginPost() else { return false }
+        if selectedCount > 0 {
+            removeSelection()
+        }
         content.append(text)
         return true
     }
 
     @discardableResult
     func postShiftLeft() -> Bool {
-        // Selection stub is not a real delivery path; treat as no-op success for harness safety.
-        beginPost()
+        guard beginPost() else { return false }
+        // Select one more scalar to the left (clamped to the document length).
+        let maxSelect = content.unicodeScalars.count
+        if selectedCount < maxSelect {
+            selectedCount += 1
+        }
+        return true
     }
 
     @discardableResult
@@ -423,12 +451,18 @@ final class TextInjector {
         case .charByChar:
             return planBackspaceThenText(backspace: backspace, text: text, delays: delays, charByChar: true)
 
+        case .selection:
+            return planSelection(backspace: backspace, text: text, delays: delays)
+
+        case .emptyCharPrefix:
+            return planEmptyCharPrefix(backspace: backspace, text: text, delays: delays)
+
         case .axDirect:
             // Plan inspects the synthetic fallback path (AX is attempted only at inject time).
             return planBackspaceThenText(backspace: backspace, text: text, delays: delays, charByChar: false)
 
-        case .selection, .emptyCharPrefix, .syncProxy:
-            // Unreachable: deliveryImplementation rewrites these to backspaceFast.
+        case .syncProxy:
+            // Unreachable: deliveryImplementation rewrites syncProxy to backspaceFast.
             return planBackspaceThenText(backspace: backspace, text: text, delays: delays, charByChar: false)
         }
     }
@@ -559,6 +593,82 @@ final class TextInjector {
                 }
             }
         } else {
+            cmds.append(.unicodeChunk(text))
+            if delays.textUs > 0 {
+                cmds.append(.wait(microseconds: delays.textUs))
+            }
+        }
+        return cmds
+    }
+
+    /// Shift+Left to select the trailing `backspace` scalars, then replace with `text`.
+    ///
+    /// Empty text (pure wipe) uses Backspace per scalar instead — Shift+Left would
+    /// select surrounding whitespace/punctuation and Backspace is the reliable delete
+    /// (Gõ Nhanh parity). Delay placement mirrors `planBackspaceThenText` with a
+    /// settle floor before replacement text: autocomplete/selection apps need a
+    /// beat to apply the Shift+Left batch even when configured delays are zero.
+    /// The floor is added once per batch (never per selected scalar) and only when
+    /// replacement text follows — a nonzero user `settleUs` keeps its exact value.
+    private func planSelection(
+        backspace: Int,
+        text: String,
+        delays: DelayPreset
+    ) -> [InjectorCommand] {
+        var cmds: [InjectorCommand] = []
+        if backspace > 0 {
+            let select = text.isEmpty ? InjectorCommand.backspace : InjectorCommand.shiftLeft
+            for i in 0..<backspace {
+                cmds.append(select)
+                if delays.backspaceUs > 0, i < backspace - 1 || delays.settleUs == 0 {
+                    cmds.append(.wait(microseconds: delays.backspaceUs))
+                }
+            }
+            if !text.isEmpty {
+                // Exactly one bounded settle floor before Unicode text. Matches
+                // Gõ Nhanh conditional: configured delay > 0 keeps its value; a
+                // zero settle becomes 1000us (well under 12ms budget).
+                let settle = delays.settleUs > 0 ? delays.settleUs : 1000
+                cmds.append(.wait(microseconds: settle))
+            }
+        }
+        if !text.isEmpty {
+            cmds.append(.unicodeChunk(text))
+            if delays.textUs > 0 {
+                cmds.append(.wait(microseconds: delays.textUs))
+            }
+        }
+        return cmds
+    }
+
+    /// Post U+202F (narrow no-break space) to break autocomplete highlight, then
+    /// delete `backspace + 1` scalars (the extra Backspace removes the prefix itself),
+    /// then insert `text` in one chunk.
+    ///
+    /// A 1ms floor waits after the prefix (Gõ Nhanh parity) so the autocomplete
+    /// highlight clears before backspaces; it is added exactly once — never per
+    /// backspace. A nonzero user `backspaceUs` keeps its exact value.
+    private func planEmptyCharPrefix(
+        backspace: Int,
+        text: String,
+        delays: DelayPreset
+    ) -> [InjectorCommand] {
+        var cmds: [InjectorCommand] = [.emptyPrefix]
+        // Exactly one bounded floor before deletions. Matches Gõ Nhanh conditional:
+        // configured delay > 0 keeps its value; a zero backspace delay becomes
+        // 1000us (well under 12ms budget).
+        cmds.append(.wait(microseconds: delays.backspaceUs > 0 ? delays.backspaceUs : 1000))
+        let total = backspace + 1
+        for i in 0..<total {
+            cmds.append(.backspace)
+            if delays.backspaceUs > 0, i < total - 1 || delays.settleUs == 0 {
+                cmds.append(.wait(microseconds: delays.backspaceUs))
+            }
+        }
+        if delays.settleUs > 0 {
+            cmds.append(.wait(microseconds: delays.settleUs))
+        }
+        if !text.isEmpty {
             cmds.append(.unicodeChunk(text))
             if delays.textUs > 0 {
                 cmds.append(.wait(microseconds: delays.textUs))

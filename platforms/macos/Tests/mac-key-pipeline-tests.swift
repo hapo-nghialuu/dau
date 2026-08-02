@@ -242,7 +242,12 @@ final class MacKeyPipelineTests: XCTestCase {
         XCTAssertEqual(pipeline.provisionalLength, 0)
     }
 
-    func testAutoRestoreTesstSpaceProducesRawTextOnce() {
+    /// Telex `tesst` composes to `test` and commits exactly one `test ` on break.
+    /// Matches core contract in `core/src/engine/manual-revert-tests.rs`
+    /// (`tesst_auto_restore_keeps_composed_telex_on_supported_breaks`: raw="tesst",
+    /// composing="test", on_break(' ') text="test"). The committed form is the
+    /// composed `test` — the raw `tesst` keys are not re-injected.
+    func testAutoRestoreTesstSpaceCommitsComposedTestOnce() {
         bridge.setAutoRestore(true)
         var document = PipelineFakeDocument()
 
@@ -253,7 +258,7 @@ final class MacKeyPipelineTests: XCTestCase {
         XCTAssertEqual(pipeline.provisionalText, "test")
 
         document.apply(pipeline.handleBreak(sc(" ")), originalKey: " ")
-        XCTAssertEqual(document.text, "tesst ")
+        XCTAssertEqual(document.text, "test ")
     }
 
     // MARK: - Restore / Esc

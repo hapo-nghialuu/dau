@@ -428,7 +428,8 @@ final class TypingSessionTests: XCTestCase {
         XCTAssertNil(session.currentFrontmostBundleId())
     }
 
-    /// Declared-only stub methods are rewritten at apply time (never silent stub delivery).
+    /// Only declared-only stubs are rewritten at apply time (never silent stub delivery).
+    /// Implemented methods (selection / emptyCharPrefix) are delivered as themselves.
     func testStubInjectionMethodFallsBackAtApply() {
         session.applyRuntimeSettings(
             typingEnabled: true,
@@ -436,7 +437,9 @@ final class TypingSessionTests: XCTestCase {
             delays: .zero,
             engineMethod: DauMethod_Telex
         )
-        XCTAssertEqual(session.currentInjectionMethod(), .backspaceFast)
+        XCTAssertEqual(session.currentInjectionMethod(), .selection)
+        session.setInjectionMethod(.emptyCharPrefix)
+        XCTAssertEqual(session.currentInjectionMethod(), .emptyCharPrefix)
         session.setInjectionMethod(.syncProxy)
         XCTAssertEqual(session.currentInjectionMethod(), .backspaceFast)
     }
@@ -993,5 +996,138 @@ final class TypingSessionTests: XCTestCase {
         XCTAssertFalse(joined.contains("â"), "must not log typed content")
         XCTAssertTrue(joined.contains("batch="), "batch id for repro")
         XCTAssertTrue(joined.contains("bundle=com.example.Chat") || joined.contains("textLen="))
+    }
+
+    // MARK: - Implemented selection / emptyCharPrefix delivery via fake document
+
+    /// Selection method: transform rewrite selects the trailing scalar then posts replacement.
+    /// FakeTargetDocument models Shift+Left selection; physical pass-through only on pass.
+    func testSessionSelectionDeliveryReplacesComposedScalars() {
+        let doc = FakeTargetDocument()
+        let bridge = DauCoreBridge(method: DauMethod_Telex)
+        bridge.setAutoCapitalize(false)
+        bridge.setAutoRestore(false)
+        bridge.setEnabled(true)
+        let pipeline = MacKeyPipeline(bridge: bridge)
+        let injector = TextInjector(
+            sink: doc,
+            sleeper: RecordingInjectorSleeper(),
+            axAccessor: AXTextAccessor()
+        )
+        let session = TypingSession(pipeline: pipeline, injector: injector)
+        session.applyRuntimeSettings(
+            typingEnabled: true,
+            injectionMethod: .selection,
+            delays: .zero,
+            engineMethod: DauMethod_Telex
+        )
+
+        // Physical "a" passes (plain append).
+        _ = session.handleKey(printable("a"))
+        doc.applyPhysicalKey("a")
+        // Second "a" → â transform: selection inject must replace one scalar.
+        let exp = expectation(description: "selection-inject")
+        session.onInjectCompleted = { _ in exp.fulfill() }
+        let d = session.handleKey(printable("a"))
+        wait(for: [exp], timeout: 1.0)
+        session.onInjectCompleted = nil
+        XCTAssertTrue(d.consumeOriginal, "transform consumes original under selection method")
+        XCTAssertEqual(doc.content, "â")
+    }
+
+    /// Selection method with empty text (pure wipe) must use Backspace, not Shift+Left.
+    func testSessionSelectionEmptyTextUsesBackspaceNotShiftLeft() {
+        let sink = RecordingEventSink()
+        let bridge = DauCoreBridge(method: DauMethod_Telex)
+        bridge.setEnabled(true)
+        bridge.setAutoCapitalize(false)
+        bridge.setAutoRestore(false)
+        let pipeline = MacKeyPipeline(bridge: bridge)
+        let injector = TextInjector(sink: sink, sleeper: sleeper, axAccessor: AXTextAccessor())
+        let session = TypingSession(pipeline: pipeline, injector: injector)
+        session.applyRuntimeSettings(
+            typingEnabled: true,
+            injectionMethod: .selection,
+            delays: .zero,
+            engineMethod: DauMethod_Telex
+        )
+
+        _ = session.handleKey(printable("a"))
+        sink.reset()
+        let d = session.handleKey(backspaceKey())
+        XCTAssertTrue(d.consumeOriginal)
+        XCTAssertEqual(d.result.backspace, 1)
+        XCTAssertEqual(d.result.text, "")
+        XCTAssertEqual(sink.commands, [.backspace], "empty selection wipe must use Backspace")
+        XCTAssertFalse(sink.commands.contains(.shiftLeft))
+        XCTAssertEqual(session.provisionalLength, 0)
+    }
+
+    /// emptyCharPrefix delivery: prefix posts before backspaces on transform inject.
+    func testSessionEmptyCharPrefixDeliveryPostsPrefixBeforeBackspace() {
+        let sink = RecordingEventSink()
+        let bridge = DauCoreBridge(method: DauMethod_Telex)
+        bridge.setEnabled(true)
+        bridge.setAutoCapitalize(false)
+        bridge.setAutoRestore(false)
+        let pipeline = MacKeyPipeline(bridge: bridge)
+        let injector = TextInjector(sink: sink, sleeper: sleeper, axAccessor: AXTextAccessor())
+        let session = TypingSession(pipeline: pipeline, injector: injector)
+        session.applyRuntimeSettings(
+            typingEnabled: true,
+            injectionMethod: .emptyCharPrefix,
+            delays: .zero,
+            engineMethod: DauMethod_Telex
+        )
+
+        _ = session.handleKey(printable("a"))
+        sink.reset()
+        let d = session.handleKey(printable("a")) // a→â transform
+        XCTAssertTrue(d.consumeOriginal)
+        XCTAssertTrue(d.injectScheduled)
+        XCTAssertEqual(sink.commands, [
+            .emptyPrefix,
+            .backspace, .backspace, // prefix + one composed scalar
+            .unicodeChunk("â"),
+        ])
+    }
+
+    /// Sink failure mid-emptyCharPrefix batch must not report success (dead-key safety).
+    func testEmptyCharPrefixSinkFailureFailsOpen() {
+        let sink = RecordingEventSink()
+        let bridge = DauCoreBridge(method: DauMethod_Telex)
+        bridge.setEnabled(true)
+        bridge.setAutoCapitalize(false)
+        bridge.setAutoRestore(false)
+        let pipeline = MacKeyPipeline(bridge: bridge)
+        let injector = TextInjector(sink: sink, sleeper: sleeper, axAccessor: AXTextAccessor())
+        let session = TypingSession(pipeline: pipeline, injector: injector)
+        session.applyRuntimeSettings(
+            typingEnabled: true,
+            injectionMethod: .emptyCharPrefix,
+            delays: .zero,
+            engineMethod: DauMethod_Telex
+        )
+
+        _ = session.handleKey(printable("a"))
+        sink.reset()
+        sink.failAtCommandIndex = 3 // emptyPrefix, BS, BS fail
+        var injectResult: Result<Void, InjectionError>?
+        let exp = expectation(description: "prefix-fail")
+        session.onInjectCompleted = { result in
+            injectResult = result
+            exp.fulfill()
+        }
+        let d = session.handleKey(printable("a"))
+        wait(for: [exp], timeout: 1.0)
+        session.onInjectCompleted = nil
+
+        XCTAssertFalse(d.consumeOriginal, "fail-open: pass original after sink failure")
+        if case .failure = injectResult {
+            // expected
+        } else {
+            XCTFail("expected failure, got \(String(describing: injectResult))")
+        }
+        XCTAssertEqual(session.provisionalLength, 0)
     }
 }

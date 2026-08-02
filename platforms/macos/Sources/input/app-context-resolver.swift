@@ -54,6 +54,16 @@ final class AXFocusedRoleProvider: AXRoleProviding {
         let description = copyStringAttribute(element, kAXDescriptionAttribute as CFString) ?? ""
         let identifier = copyStringAttribute(element, kAXIdentifierAttribute as CFString) ?? ""
 
+        return category(role: role, subrole: subrole, description: description, identifier: identifier)
+    }
+
+    /// Pure token → category decision (no AX work; unit-testable).
+    static func category(
+        role: String,
+        subrole: String = "",
+        description: String = "",
+        identifier: String = ""
+    ) -> AXRoleCategory? {
         let blob = [role, subrole, description, identifier]
             .joined(separator: " ")
             .lowercased()
@@ -88,7 +98,8 @@ final class AXFocusedRoleProvider: AXRoleProviding {
     }
 }
 
-/// MVP stub that always returns `nil` role (no AX work).
+/// Test / non-AX provider that always returns `nil` role (no AX work).
+/// Production wiring defaults to `AXFocusedRoleProvider`; this stays as a test seam.
 final class StubAXRoleProvider: AXRoleProviding {
     func focusedRoleCategory() -> AXRoleCategory? { nil }
 }
@@ -106,7 +117,7 @@ final class AppContextResolver {
 
     init(
         frontmostProvider: FrontmostAppProviding = WorkspaceFrontmostAppProvider(),
-        roleProvider: AXRoleProviding = StubAXRoleProvider()
+        roleProvider: AXRoleProviding = AXFocusedRoleProvider()
     ) {
         self.frontmostProvider = frontmostProvider
         self.roleProvider = roleProvider

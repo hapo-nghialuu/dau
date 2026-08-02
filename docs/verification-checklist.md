@@ -65,9 +65,21 @@ Chuỗi test chuẩn mỗi app:
 | App | Test | Kết quả |
 |-----|------|---------|
 | Firefox / Chrome (ô text) | `tieengs` / Telex cơ bản | **PASS** (báo user 2026-07-23) |
-| Chrome | address bar (selection method) | ⬜ |
+| Chrome / Safari | address bar (emptyCharPrefix qua AX role fallback) | ⬜ — automated contract PASS; **live TCC smoke chưa chạy** (không claim PASS) |
 | LibreOffice Writer | đoạn văn có dấu | ⬜ |
 | LibreOffice Calc | ô nhập | ⬜ |
+
+## 3b. Automated contract — macOS (không cần TCC/AX user session)
+
+> Kiểm thử đơn vị đóng contract cho các surface developer hay gõ. Chạy bằng:
+> `xcodebuild test -project platforms/macos/Dau.xcodeproj -scheme Dau -destination 'platform=macOS'`
+> PASS ở đây = contract code khớp kỳ vọng, KHÔNG phải gõ thật trên app. Live smoke vẫn phải chạy riêng (§3 Smoke / §4).
+
+- [x] Terminal/AI CLI shipped rows → `backspaceFast` + zero delay (`injection-profile-tests.swift`).
+- [x] Electron editor/chat shipped rows → `charByChar` (`injection-profile-tests.swift`).
+- [x] textField → `backspaceFast`; editor/textarea → `charByChar`; combo/search → `selection`; addressBar → `emptyCharPrefix` (role fallback matrix).
+- [x] Không có shipped row broad cho Safari/Chrome/Chromium (không shadow AX role fallback).
+- [x] Command ordering: selection = Shift+Left trước text; emptyCharPrefix = prefix guard → backspace → text (`text-injector-tests.swift`).
 
 ## 4. Kiểm tra riêng north star (terminal/AI CLI)
 
