@@ -15,7 +15,7 @@ fn engine_with(method: Method, keys: &str) -> Engine {
 
 #[test]
 fn tesst_auto_restore_keeps_composed_telex_on_supported_breaks() {
-    for brk in [' ', '.', ',', '!', '?', '\n', ';', ':'] {
+    for brk in [' ', '.', ',', '!', '?', '\n', '\r', '\t', ';', ':'] {
         let mut engine = engine_with(Method::Telex, "tesst");
         assert_eq!(engine.raw(), "tesst", "raw before {brk:?}");
         assert_eq!(engine.composing(), "test", "composing before {brk:?}");
