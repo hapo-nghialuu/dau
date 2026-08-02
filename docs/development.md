@@ -187,7 +187,7 @@ Nguồn kiểm tra: `core/Cargo.toml`, `platforms/linux/CMakeLists.txt`, `data/*
 
 ## CI
 
-Workflow GitHub Actions (`.github/workflows/ci.yml`) chạy test core và build addon trên Linux. Badge trên [README](../README.md).
+Workflow GitHub Actions (`.github/workflows/ci.yml`) chạy test core và addon trên Linux, đồng thời chạy core và `xcodebuild test` trên macOS. Job macOS chỉ xác minh compile/test; ký Developer ID, notarization và phát hành ngoài App Store cần secrets/chứng chỉ maintainer, chưa được claim trong CI. Badge trên [README](../README.md).
 
 ## Liên kết
 

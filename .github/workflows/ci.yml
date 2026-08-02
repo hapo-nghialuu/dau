@@ -7,6 +7,17 @@ on:
     branches: [main]
 
 jobs:
+  macos:
+    name: macOS core and app tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test Rust core
+        run: cargo test --manifest-path core/Cargo.toml
+      - name: Test macOS app
+        run: xcodebuild test -project platforms/macos/Dau.xcodeproj -scheme Dau -destination 'platform=macOS'
+
   deb:
     name: deb
     runs-on: ubuntu-latest

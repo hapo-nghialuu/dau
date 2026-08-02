@@ -5,17 +5,17 @@
 </p>
 
 <p align="center">
-  <strong>Bộ gõ tiếng Việt cho Linux</strong> — nhanh, riêng tư, terminal &amp; AI CLI first-class.
+  <strong>Bộ gõ tiếng Việt cho Linux và macOS</strong> — nhanh, riêng tư, terminal &amp; AI CLI first-class.
 </p>
 
 <p align="center">
   <a href="https://github.com/hapo-nghialuu/dau/actions/workflows/ci.yml"><img src="https://github.com/hapo-nghialuu/dau/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/version-0.1.0-blue" alt="version 0.1.0">
   <img src="https://img.shields.io/badge/license-MIT%20%2B%20BSD--3--Clause-green" alt="MIT + BSD-3-Clause">
-  <img src="https://img.shields.io/badge/platform-Linux%20(Fcitx5)-orange" alt="Linux Fcitx5">
+  <img src="https://img.shields.io/badge/platform-Linux%20(Fcitx5)%20%7C%20macOS-orange" alt="Linux Fcitx5 and macOS">
 </p>
 
-**Dấu** (`dau`) là bộ gõ tiếng Việt mã nguồn mở, offline 100%, dùng **Rust core** + **Fcitx5** trên Linux. Phiên bản **0.1.0**.
+**Dấu** (`dau`) là bộ gõ tiếng Việt mã nguồn mở, offline 100%, dùng **Rust core** với bridge Fcitx5 trên Linux và native event tap trên macOS. Phiên bản **0.1.0**.
 
 > English: *Vietnamese input method for Linux — fast, private, terminal & AI-CLI first-class.*
 
@@ -55,12 +55,13 @@ Chi tiết: **[docs/install-linux.md](docs/install-linux.md)**.
 ## Kiến trúc (tóm tắt)
 
 ```
-Phím → Fcitx5 addon (C++) → FFI → dau-core (Rust) → preedit / commit
+Linux: Phím → Fcitx5 addon (C++) → FFI → dau-core (Rust) → preedit / commit
+macOS: Phím → Accessibility/Event Tap → Swift bridge → FFI → dau-core (Rust)
 ```
 
 - `core/` — engine Telex/VNI, config, C ABI (`dau_core.h`)
 - `platforms/linux/` — bridge Fcitx5, `typing_controller`, `strategy_resolver`
-- Một core; macOS (roadmap) sẽ dùng bridge riêng
+- Một core dùng chung; mỗi nền tảng có bridge riêng
 
 Xem [docs/development.md](docs/development.md).
 
@@ -77,7 +78,7 @@ make check-metadata    # đồng bộ version / license / repo
 | Nền tảng | Trạng thái |
 |----------|------------|
 | **Linux (Fcitx5)** | v0.1.0 — hỗ trợ |
-| **macOS** | Roadmap (bridge riêng, cùng core Rust) |
+| **macOS** | Beta kỹ thuật — bridge native, cùng core Rust |
 | Windows | Ngoài phạm vi v1 |
 
 ## License
