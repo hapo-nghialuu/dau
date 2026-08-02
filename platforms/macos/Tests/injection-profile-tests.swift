@@ -765,6 +765,58 @@ final class InjectionProfileTests: XCTestCase {
         XCTAssertEqual(seen[0].1, "com.b")
     }
 
+    /// AX fail-safe: a focused-element change inside the current app must stale the
+    /// cache (role re-classified lazily) and fire the hook with the same bundle id.
+    func testFocusChangeObserverAXFocusChangeInvalidatesSameBundle() {
+        let front = FakeFrontmost()
+        front.bundleId = "com.a"
+        let context = AppContextResolver(
+            frontmostProvider: front,
+            roleProvider: StubAXRoleProvider()
+        )
+        _ = context.refresh()
+        XCTAssertTrue(context.hasValidCache)
+
+        let observer = FocusChangeObserver(contextResolver: context)
+        var seen: [(String?, String?)] = []
+        observer.onFocusChange = { prev, next in
+            seen.append((prev, next))
+        }
+        // Establish lastBundleId without a workspace round-trip.
+        observer.simulateActivation(bundleId: "com.a")
+        XCTAssertTrue(context.hasValidCache)
+        let countBefore = seen.count
+
+        observer.simulateAXFocusChange()
+
+        XCTAssertFalse(context.hasValidCache, "AX focus change must stale the resolver cache")
+        XCTAssertEqual(seen.count, countBefore + 1)
+        XCTAssertEqual(seen.last?.0, "com.a", "previous bundle must be the same-app bundle")
+        XCTAssertEqual(seen.last?.1, "com.a", "new bundle must equal the same-app bundle")
+        // Re-resolve re-classifies; must still report the same frontmost bundle.
+        XCTAssertEqual(context.current.bundleId, "com.a")
+    }
+
+    /// start()/stop() are idempotent: double-start does not double-register and
+    /// double-stop is a safe no-op (AX registration is guarded by pid/trust).
+    func testFocusChangeObserverStartStopIsIdempotent() {
+        let front = FakeFrontmost()
+        front.bundleId = "com.a"
+        let context = AppContextResolver(
+            frontmostProvider: front,
+            roleProvider: StubAXRoleProvider()
+        )
+        let observer = FocusChangeObserver(contextResolver: context)
+
+        observer.start()
+        observer.start()
+        XCTAssertTrue(observer.isRunning)
+
+        observer.stop()
+        observer.stop()
+        XCTAssertFalse(observer.isRunning)
+    }
+
     /// Terminal shipped profile must resolve to backspaceSlow + TOML delays, and the
     /// session must receive a non-nil bundle id when context has an app (profile wiring).
     func testTerminalProfileAppliesToSessionWithBundleId() {
