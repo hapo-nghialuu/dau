@@ -78,13 +78,23 @@ final class MenuBarController: NSObject {
 
         // Text-only badge: VI when ready+typing, EN otherwise (no status-item logo).
         button.image = nil
-        button.title = state.menuBarTitle
+        button.attributedTitle = statusBadgeTitle(state.menuBarTitle)
         button.imagePosition = .noImage
         statusItem?.length = NSStatusItem.variableLength
-        button.font = NSFont.menuBarFont(ofSize: 0)
         button.toolTip = state.menuBarToolTip
         button.setAccessibilityLabel(state.menuBarAccessibilityLabel)
         button.setAccessibilityTitle(state.menuBarAccessibilityLabel)
+    }
+
+    private func statusBadgeTitle(_ title: String) -> NSAttributedString {
+        let menuBarPointSize = NSFont.menuBarFont(ofSize: 0).pointSize
+        return NSAttributedString(
+            string: title,
+            attributes: [
+                .font: NSFont.boldSystemFont(ofSize: menuBarPointSize),
+                .foregroundColor: NSColor.dauBrandOrange,
+            ]
+        )
     }
 
     // MARK: - Menu
@@ -253,7 +263,7 @@ private final class MenuHeaderView: NSView {
     private let logoView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "Dấu")
     private let subtitleLabel = NSTextField(labelWithString: "")
-    private let toggle = NSSwitch()
+    private let toggle = BrandSwitchButton()
 
     init(
         subtitle: String,
@@ -261,7 +271,7 @@ private final class MenuHeaderView: NSView {
         target: AnyObject?,
         toggleAction: Selector
     ) {
-        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 56))
+        super.init(frame: NSRect(x: 0, y: 0, width: 320, height: 56))
 
         wantsLayer = true
 
@@ -276,8 +286,6 @@ private final class MenuHeaderView: NSView {
             logoView.image = fallback
         }
         logoView.imageScaling = .scaleProportionallyUpOrDown
-        logoView.frame = NSRect(x: 14, y: 14, width: 28, height: 28)
-        addSubview(logoView)
 
         titleLabel.stringValue = "Dấu"
         titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -286,8 +294,6 @@ private final class MenuHeaderView: NSView {
         titleLabel.isEditable = false
         titleLabel.isSelectable = false
         titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.frame = NSRect(x: 50, y: 28, width: 160, height: 18)
-        addSubview(titleLabel)
 
         subtitleLabel.stringValue = subtitle
         subtitleLabel.font = .systemFont(ofSize: 11, weight: .regular)
@@ -297,29 +303,98 @@ private final class MenuHeaderView: NSView {
         subtitleLabel.isEditable = false
         subtitleLabel.isSelectable = false
         subtitleLabel.lineBreakMode = .byTruncatingTail
-        subtitleLabel.frame = NSRect(x: 50, y: 10, width: 160, height: 16)
-        addSubview(subtitleLabel)
 
-        toggle.controlSize = .small
         toggle.state = typingEnabled ? .on : .off
         toggle.target = target
         toggle.action = toggleAction
         toggle.setAccessibilityLabel("Bật hoặc tắt gõ tiếng Việt")
-        // Right-align switch.
-        toggle.sizeToFit()
-        let switchSize = toggle.fittingSize
-        toggle.frame = NSRect(
-            x: bounds.width - switchSize.width - 14,
-            y: (bounds.height - switchSize.height) / 2,
-            width: switchSize.width,
-            height: switchSize.height
-        )
-        toggle.autoresizingMask = [.minXMargin]
-        addSubview(toggle)
+
+        // Auto Layout pins the VI/EN switch flush to the right edge no matter what
+        // width NSMenu assigns to this header (menu width can exceed the initial
+        // 280pt frame, which frame-based right-alignment drifted on).
+        for subview in [logoView, titleLabel, subtitleLabel, toggle] {
+            subview.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(subview)
+        }
+        NSLayoutConstraint.activate([
+            logoView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            logoView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            logoView.widthAnchor.constraint(equalToConstant: 28),
+            logoView.heightAnchor.constraint(equalToConstant: 28),
+
+            titleLabel.leadingAnchor.constraint(equalTo: logoView.trailingAnchor, constant: 8),
+            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 9),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -8),
+
+            subtitleLabel.leadingAnchor.constraint(equalTo: logoView.trailingAnchor, constant: 8),
+            subtitleLabel.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -10),
+            subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -8),
+
+            toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            toggle.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+}
+
+private final class BrandSwitchButton: NSButton {
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 38, height: 22)
+    }
+
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: 38, height: 22))
+        setButtonType(.toggle)
+        title = ""
+        isBordered = false
+        isTransparent = false
+        focusRingType = .none
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var state: NSControl.StateValue {
+        didSet { needsDisplay = true }
+    }
+
+    override var isHighlighted: Bool {
+        didSet { needsDisplay = true }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let isOn = state == .on
+        let trackRect = bounds.insetBy(dx: 1, dy: 2)
+        let trackColor: NSColor = isOn ? .dauBrandOrange : .dauSwitchOffTrack
+        trackColor.withAlphaComponent(isHighlighted ? 0.82 : 1.0).setFill()
+        NSBezierPath(roundedRect: trackRect, xRadius: trackRect.height / 2, yRadius: trackRect.height / 2).fill()
+
+        let knobSize = trackRect.height - 4
+        let knobX = isOn ? trackRect.maxX - knobSize - 2 : trackRect.minX + 2
+        let knobRect = NSRect(x: knobX, y: trackRect.minY + 2, width: knobSize, height: knobSize)
+        NSColor.white.setFill()
+        NSBezierPath(ovalIn: knobRect).fill()
+    }
+}
+
+extension NSColor {
+    static let dauBrandOrange = NSColor(
+        calibratedRed: 232.0 / 255.0,
+        green: 83.0 / 255.0,
+        blue: 30.0 / 255.0,
+        alpha: 1.0
+    )
+
+    static let dauSwitchOffTrack = NSColor(
+        calibratedRed: 0.42,
+        green: 0.44,
+        blue: 0.46,
+        alpha: 1.0
+    )
 }
