@@ -366,7 +366,7 @@ fn shortcut_wins_over_composition() {
 /// Auto-restore applies on every supported break, not just space.
 #[test]
 fn auto_restore_applies_on_all_breaks() {
-    for brk in [' ', '.', ',', '!', '?', '\n', ';', ':'] {
+    for brk in [' ', '.', ',', '!', '?', '\n', '\r', '\t', ';', ':'] {
         assert_eq!(
             break_word(Method::Telex, "text", brk),
             "text",
@@ -378,6 +378,58 @@ fn auto_restore_applies_on_all_breaks() {
             "restore `wow` on {brk:?}"
         );
     }
+}
+
+/// Terminal word breaks from the macOS key-classifier (Tab `\t`, Return
+/// `\n`/`\r`) must restore English exactly like space/punctuation, including
+/// the high-confidence daily-English path that is valid as Vietnamese display.
+#[test]
+fn auto_restore_english_on_tab_and_return() {
+    for brk in ['\t', '\n', '\r'] {
+        assert_eq!(
+            break_word(Method::Telex, "case", brk),
+            "case",
+            "restore `case` on {brk:?}"
+        );
+        assert_eq!(
+            break_word(Method::Telex, "things", brk),
+            "things",
+            "restore `things` on {brk:?}"
+        );
+        assert_eq!(
+            break_word(Method::Telex, "expect", brk),
+            "expect",
+            "restore `expect` on {brk:?}"
+        );
+    }
+}
+
+/// Tab and Return(CR) are word breaks, not sentence ends: they must NOT enable
+/// sentence capitalization. (`\n` is a sentence end and keeps capitalize-next,
+/// matching existing policy.) `.`/`!`/`?`/Return are the only sentence ends.
+#[test]
+fn tab_and_cr_do_not_force_sentence_capitalization() {
+    for brk in ['\t', '\r'] {
+        let mut eng = Engine::new(Method::Telex);
+        eng.set_auto_capitalize(true);
+        type_keys(&mut eng, "ok");
+        let out = eng.on_break(brk);
+        assert!(
+            !out.capitalize_next,
+            "{brk:?} must not enable capitalize-next"
+        );
+    }
+}
+
+/// Return/Newline (`\n`) IS a sentence end and must enable capitalize-next,
+/// consistent with `is_sentence_end`.
+#[test]
+fn newline_enables_sentence_capitalization() {
+    let mut eng = Engine::new(Method::Telex);
+    eng.set_auto_capitalize(true);
+    type_keys(&mut eng, "ok");
+    let out = eng.on_break('\n');
+    assert!(out.capitalize_next, "\\n must enable capitalize-next");
 }
 
 /// With auto_restore off, composed Vietnamese form stays unchanged.

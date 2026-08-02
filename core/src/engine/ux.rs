@@ -13,11 +13,25 @@ pub struct BreakOutput {
 }
 
 /// Break characters that may trigger English auto-restore.
+///
+/// Includes the terminal word breaks the macOS key-classifier already classifies
+/// as `breakKey` (space, punctuation, Return, Tab): `\t` (Tab) and `\r`
+/// (Return/CR) are added alongside `\n` so composing words ending on Tab or
+/// Return restore English the same way they do on space or punctuation. They do
+/// **not** set sentence capitalization (conservative policy — see
+/// [`is_sentence_end`]).
 pub fn is_restore_break(brk: char) -> bool {
-    matches!(brk, ' ' | '.' | ',' | '!' | '?' | '\n' | ';' | ':')
+    matches!(
+        brk,
+        ' ' | '.' | ',' | '!' | '?' | '\n' | '\r' | '\t' | ';' | ':'
+    )
 }
 
 /// Sentence-ending breaks that enable capitalize-next.
+///
+/// Only true sentence terminators set capitalization. `\t` (Tab) and `\r`
+/// (Return/CR) restore English on break but deliberately do not count as
+/// sentence ends, keeping the conservative capitalization policy.
 pub fn is_sentence_end(brk: char) -> bool {
     matches!(brk, '.' | '!' | '?' | '\n')
 }
