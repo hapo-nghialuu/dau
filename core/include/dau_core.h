@@ -13,8 +13,18 @@
 
 // Maximum UTF-32 code points returned in a single [`DauDeltaResult`].
 //
-// Kept as a literal `64` in [`DauDeltaResult::chars`] so cbindgen emits a valid C array size.
-#define DAU_DELTA_MAX_CHARS 64
+// Raised from `64` to `256` (Phase 3a) so long inline insert payloads (large
+// shortcut expansions, long typed words) survive the FFI round-trip without
+// truncation. Kept as a literal `256` in [`DauDeltaResult::chars`] so cbindgen
+// emits a valid C array size.
+//
+// Internal v0.1 ABI: this widens the fixed `chars` array. Hosts compiled
+// against the old 64-wide header must rebuild against the new one. `count` /
+// `backspace` stay `u8`, so the **insertable** payload is capped at
+// `u8::MAX` (255) scalars; the array's last slot (256) stays unused to keep
+// `count = 256` from wrapping to 0. `DisplayDelta::backspace` is also `u8`
+// (max 255), so a restore/escape of >255 scalars is out of scope for v0.1.
+#define DAU_DELTA_MAX_CHARS 256
 
 // Suggested action for the host IME bridge after a key event.
 typedef enum DauAction {
@@ -52,11 +62,15 @@ typedef struct Engine Engine;
 //
 // Layout derived from Gõ Nhanh `Result` (BSD-3-Clause, Copyright (c) 2025
 // Gõ Nhanh Contributors). See root `NOTICE`.
+//
+// `chars` is widened from 64 → 256 code points (Phase 3a, internal v0.1 ABI)
+// so long inline deltas are not truncated; hosts must rebuild against the
+// matching `dau_core.h`.
 typedef struct DauDeltaResult {
   enum DauAction action;
-  // UTF-32 code points to insert (valid prefix length is `count`, max 64).
-  uint32_t chars[64];
-  // Number of code points in `chars` to insert (0..=64).
+  // UTF-32 code points to insert (valid prefix length is `count`, max 256).
+  uint32_t chars[256];
+  // Number of code points in `chars` to insert (0..=256).
   uint8_t count;
   // Number of Unicode scalars to delete before inserting.
   uint8_t backspace;

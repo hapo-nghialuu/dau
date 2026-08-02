@@ -22,8 +22,18 @@ use std::path::Path;
 
 /// Maximum UTF-32 code points returned in a single [`DauDeltaResult`].
 ///
-/// Kept as a literal `64` in [`DauDeltaResult::chars`] so cbindgen emits a valid C array size.
-pub const DAU_DELTA_MAX_CHARS: usize = 64;
+/// Raised from `64` to `256` (Phase 3a) so long inline insert payloads (large
+/// shortcut expansions, long typed words) survive the FFI round-trip without
+/// truncation. Kept as a literal `256` in [`DauDeltaResult::chars`] so cbindgen
+/// emits a valid C array size.
+///
+/// Internal v0.1 ABI: this widens the fixed `chars` array. Hosts compiled
+/// against the old 64-wide header must rebuild against the new one. `count` /
+/// `backspace` stay `u8`, so the **insertable** payload is capped at
+/// `u8::MAX` (255) scalars; the array's last slot (256) stays unused to keep
+/// `count = 256` from wrapping to 0. `DisplayDelta::backspace` is also `u8`
+/// (max 255), so a restore/escape of >255 scalars is out of scope for v0.1.
+pub const DAU_DELTA_MAX_CHARS: usize = 256;
 
 /// Input method selection for the C ABI.
 #[repr(C)]
@@ -64,13 +74,17 @@ pub enum DauAction {
 ///
 /// Layout derived from Gõ Nhanh `Result` (BSD-3-Clause, Copyright (c) 2025
 /// Gõ Nhanh Contributors). See root `NOTICE`.
+///
+/// `chars` is widened from 64 → 256 code points (Phase 3a, internal v0.1 ABI)
+/// so long inline deltas are not truncated; hosts must rebuild against the
+/// matching `dau_core.h`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct DauDeltaResult {
     pub action: DauAction,
-    /// UTF-32 code points to insert (valid prefix length is `count`, max 64).
-    pub chars: [u32; 64],
-    /// Number of code points in `chars` to insert (0..=64).
+    /// UTF-32 code points to insert (valid prefix length is `count`, max 256).
+    pub chars: [u32; 256],
+    /// Number of code points in `chars` to insert (0..=256).
     pub count: u8,
     /// Number of Unicode scalars to delete before inserting.
     pub backspace: u8,
@@ -81,7 +95,7 @@ impl DauDeltaResult {
     fn empty() -> Self {
         Self {
             action: DauAction::None,
-            chars: [0; 64],
+            chars: [0; DAU_DELTA_MAX_CHARS],
             count: 0,
             backspace: 0,
             capitalize_next: false,
@@ -89,9 +103,12 @@ impl DauDeltaResult {
     }
 
     fn from_delta(action: DauAction, delta: &DisplayDelta, capitalize_next: bool) -> Self {
-        let mut chars = [0u32; 64];
+        let mut chars = [0u32; DAU_DELTA_MAX_CHARS];
         let mut count = 0u8;
-        for (i, ch) in delta.insert.chars().take(DAU_DELTA_MAX_CHARS).enumerate() {
+        // Cap the insert at u8::MAX (255) scalars: `count` is a u8 and writing
+        // `count = 256` would wrap to 0 and drop the whole payload. The array is
+        // 256 wide so the last slot never needs writing.
+        for (i, ch) in delta.insert.chars().take(u8::MAX as usize).enumerate() {
             chars[i] = ch as u32;
             count = (i + 1) as u8;
         }
@@ -668,21 +685,157 @@ mod tests {
         assert_eq!(s, env!("CARGO_PKG_VERSION"));
     }
 
+    /// Type `word` through the engine and rebuild the host-visible string by
+    /// applying every delta; returns the host state.
+    fn type_word(eng: *mut Engine, word: &str) -> String {
+        let mut host = String::new();
+        // SAFETY: engine is a live pointer from `dau_engine_new`.
+        for ch in word.chars() {
+            let r = unsafe { dau_process_char(eng, ch as u32, false) };
+            assert!(r.count as usize <= DAU_DELTA_MAX_CHARS);
+            apply_delta(&mut host, &r);
+        }
+        host
+    }
+
     #[test]
-    fn result_truncates_at_64_chars() {
+    fn long_word_preserved_across_break() {
+        // Regression: a 200-scalar word must round-trip through the preedit
+        // deltas and the commit delta (previously inserts truncated at 64).
         // SAFETY: engine from dau_engine_new; freed at end of test.
         unsafe {
             let eng = dau_engine_new(DauMethod::Telex);
             dau_set_auto_capitalize(eng, false);
-            // 70 letters → insert payload must not overflow 64.
-            for _ in 0..70 {
-                let r = dau_process_char(eng, 'a' as u32, false);
-                assert!(r.count as usize <= DAU_DELTA_MAX_CHARS);
-            }
+            dau_set_auto_restore(eng, false);
+
+            let word = "b".repeat(200);
+            let mut host = type_word(eng, &word);
+            assert_eq!(host, word, "long preedit preserved (no truncation)");
+
             let r = dau_on_break(eng, ' ' as u32);
+            assert_eq!(r.action, DauAction::Commit);
             assert!(r.count as usize <= DAU_DELTA_MAX_CHARS);
+            apply_delta(&mut host, &r);
+            assert_eq!(host, word, "long word survives commit delta");
+
             dau_engine_free(eng);
         }
+    }
+
+    #[test]
+    fn boundary_shortcut_insert_64_65_200_preserved() {
+        // A shortcut expansion commits via one delta whose insert payload is the
+        // whole expansion. Exercise 64, 65, and 200 scalars — exact length and
+        // content, no truncation on either side of the old 64 cap.
+        // SAFETY: engine from dau_engine_new; CString pointers valid for the call.
+        unsafe {
+            for len in [64usize, 65, 200] {
+                let eng = dau_engine_new(DauMethod::Telex);
+                dau_set_auto_capitalize(eng, false);
+                dau_set_auto_restore(eng, false);
+
+                let expansion: String = "ế".repeat(len);
+                assert_eq!(expansion.chars().count(), len);
+
+                let key = CString::new("x").unwrap();
+                let val = CString::new(expansion.clone()).unwrap();
+                let ptrs = [key.as_ptr(), val.as_ptr()];
+                dau_set_shortcuts(eng, ptrs.as_ptr(), 1);
+
+                let mut host = type_word(eng, "x");
+                assert_eq!(host, "x");
+
+                let r = dau_on_break(eng, ' ' as u32);
+                assert_eq!(r.action, DauAction::Commit);
+                assert_eq!(
+                    r.count as usize, len,
+                    "insert payload must be exactly {len} scalars (no truncation)"
+                );
+                assert_eq!(
+                    insert_string(&r),
+                    expansion,
+                    "insert payload content preserved exactly at {len}"
+                );
+                apply_delta(&mut host, &r);
+                assert_eq!(host, expansion, "host text after applying delta");
+
+                dau_engine_free(eng);
+            }
+        }
+    }
+
+    #[test]
+    fn long_vietnamese_sentence_shortcut_round_trip() {
+        // Regression: a real Vietnamese sentence (>64 scalars, precomposed
+        // multi-byte letters) expanded from a shortcut commits through a single
+        // delta. The whole expansion must survive the FFI round-trip — no
+        // truncation, no UTF-8/scalar corruption.
+        // SAFETY: engine from dau_engine_new; CString pointers valid for call.
+        unsafe {
+            let eng = dau_engine_new(DauMethod::Telex);
+            dau_set_auto_capitalize(eng, false);
+            dau_set_auto_restore(eng, false);
+
+            let sentence =
+                "Chào bạn, hôm nay trời nắng đẹp và chúng ta cùng nhau học tiếng Việt thật vui vẻ!";
+            assert!(
+                sentence.chars().count() > 64,
+                "sentence must exceed old 64 cap (got {})",
+                sentence.chars().count()
+            );
+            assert!(
+                sentence.chars().count() <= u8::MAX as usize,
+                "keep ≤ 255 so u8 count holds"
+            );
+
+            let key = CString::new("cv").unwrap();
+            let val = CString::new(sentence).unwrap();
+            let ptrs = [key.as_ptr(), val.as_ptr()];
+            dau_set_shortcuts(eng, ptrs.as_ptr(), 1);
+
+            let mut host = type_word(eng, "cv");
+            assert_eq!(host, "cv", "shortcut key typed into host");
+
+            let r = dau_on_break(eng, ' ' as u32);
+            assert_eq!(r.action, DauAction::Commit);
+            assert!(
+                r.count as usize > 64,
+                "commit insert must exceed old 64 cap (got {})",
+                r.count
+            );
+            assert_eq!(
+                insert_string(&r),
+                sentence,
+                "commit delta carries the full sentence intact"
+            );
+            apply_delta(&mut host, &r);
+            assert_eq!(host, sentence, "host text equals the full sentence");
+
+            dau_engine_free(eng);
+        }
+    }
+
+    #[test]
+    fn delta_transport_long_backspace_and_insert() {
+        // Direct ABI check: `from_delta` must carry a large `backspace` and a
+        // long multi-byte insert payload unscathed. Engine escapes/shortcuts
+        // produce exactly this shape (display → raw with big backspace).
+        // Lengths ≤ 255 (u8 `backspace`/`count`).
+        let delta = DisplayDelta {
+            backspace: 80,
+            insert: "âđưộế".repeat(24), // 120 multi-byte scalars
+        };
+        assert_eq!(delta.insert.chars().count(), 120);
+
+        let r = DauDeltaResult::from_delta(DauAction::Restore, &delta, false);
+        assert_eq!(r.backspace, 80, "backspace preserved as-is");
+        assert_eq!(r.count as usize, 120, "insert count preserved");
+        assert_eq!(insert_string(&r), delta.insert, "insert content identical");
+
+        // Scalar (not byte) semantics: the 120 insert scalars must not be
+        // confused with the 240+ UTF-8 bytes they encode.
+        let utf8_bytes = delta.insert.len();
+        assert!(utf8_bytes > r.count as usize);
     }
 
     #[test]
