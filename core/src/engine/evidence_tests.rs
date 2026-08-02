@@ -137,6 +137,12 @@ fn telex_dduwa_stepwise() {
 }
 
 #[test]
+fn telex_horn_u_then_o_order_is_forgiving_when_syllable_closes() {
+    assert_eq!(type_word(Method::Telex, "dduwocj"), "được");
+    assert_eq!(type_word(Method::Telex, "nuwocs"), "nước");
+}
+
+#[test]
 fn telex_dduaw_never_u_breve() {
     // Transition table: no path should leave composing as *uă.
     assert_eq!(type_word(Method::Telex, "uaw"), "ưa");

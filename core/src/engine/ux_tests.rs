@@ -27,6 +27,13 @@ fn auto_restore_english_words() {
         ("wow", "wow"),
         ("perfect", "perfect"),
         ("tesla", "tesla"),
+        ("case", "case"),
+        ("luxury", "luxury"),
+        ("things", "things"),
+        ("kings", "kings"),
+        ("of", "of"),
+        ("if", "if"),
+        ("see", "see"),
         ("student", "student"),
         ("software", "software"),
         ("keyboard", "keyboard"),
@@ -44,12 +51,16 @@ fn auto_restore_english_words() {
 fn auto_restore_limits_mix_box_stay_vietnamese() {
     assert_eq!(break_word(Method::Telex, "mix", ' '), "mĩ");
     assert_eq!(break_word(Method::Telex, "box", ' '), "bõ");
+    assert_eq!(break_word(Method::Telex, "six", ' '), "sĩ");
 }
 
 #[test]
 fn auto_restore_keeps_valid_vietnamese() {
     assert_eq!(break_word(Method::Telex, "tieengs", ' '), "tiếng");
     assert_eq!(break_word(Method::Telex, "vieejt", ' '), "việt");
+    // Tone key before final consonant is a normal Telex order; English restore
+    // must not treat internal `x` as raw English by itself.
+    assert_eq!(break_word(Method::Telex, "haxm", ' '), "hãm");
 }
 
 /// Multi-`w` Telex for ươ/ươ* must stay Vietnamese (not raw-restored).
@@ -75,6 +86,9 @@ fn auto_restore_also_on_punctuation() {
     assert_eq!(break_word(Method::Telex, "text", '.'), "text");
     assert_eq!(break_word(Method::Telex, "with", ','), "with");
     assert_eq!(break_word(Method::Telex, "wow", '!'), "wow");
+    assert_eq!(break_word(Method::Telex, "case", '?'), "case");
+    assert_eq!(break_word(Method::Telex, "things", ';'), "things");
+    assert_eq!(break_word(Method::Telex, "see", ':'), "see");
 }
 
 #[test]
@@ -285,4 +299,94 @@ fn backspace_after_escape_pass_through() {
     // Still pass-through: tone key appends literally.
     eng.process_char('s', false);
     assert_eq!(eng.composing(), "as");
+}
+
+// ─── Auto-restore precedence (P1 core accuracy) ───────────────
+
+#[test]
+fn auto_restore_does_not_affect_vni() {
+    assert_eq!(break_word(Method::Vni, "a1", ' '), "á");
+    assert_eq!(break_word(Method::Vni, "test", ' '), "test");
+}
+
+/// Canonical Telex collisions compose Vietnamese instead of restoring raw keys.
+#[test]
+fn telex_vietnamese_wins_over_english_collisions() {
+    let cases = [
+        ("mix", "mĩ"),
+        ("box", "bõ"),
+        ("six", "sĩ"),
+        ("this", "thí"),
+        ("been", "bên"),
+        ("as", "á"),
+        ("is", "í"),
+        ("us", "ú"),
+        ("or", "ỏ"),
+    ];
+    for (keys, expected) in cases {
+        assert_eq!(
+            break_word(Method::Telex, keys, ' '),
+            expected,
+            "compose {keys}"
+        );
+    }
+}
+
+/// A continuous sentence through one engine: English words use phonotactic
+/// fallback, and canonical Vietnamese collisions still compose.
+#[test]
+fn telex_sentence_continuous_single_engine() {
+    let mut eng = Engine::new(Method::Telex);
+    eng.set_auto_capitalize(false);
+    type_keys(&mut eng, "this");
+    assert_eq!(eng.on_break(' ').text, "thí");
+    type_keys(&mut eng, "is");
+    assert_eq!(eng.on_break(' ').text, "í");
+    type_keys(&mut eng, "version");
+    assert_eq!(eng.on_break(' ').text, "véion");
+    type_keys(&mut eng, "cafe");
+    assert_eq!(eng.on_break('.').text, "càe");
+    // Punctuation break ends the sentence.
+    assert!(eng.on_break(' ').text.is_empty());
+    // A Vietnamese word still composes after English.
+    type_keys(&mut eng, "tieengs");
+    assert_eq!(eng.on_break(' ').text, "tiếng");
+}
+
+/// Shortcut wins over composition on word break.
+#[test]
+fn shortcut_wins_over_composition() {
+    let mut eng = Engine::new(Method::Telex);
+    eng.set_auto_capitalize(false);
+    eng.set_shortcuts(vec![("mix".into(), "một ít".into())]);
+    type_keys(&mut eng, "mix");
+    assert_eq!(eng.on_break(' ').text, "một ít");
+}
+
+/// Auto-restore applies on every supported break, not just space.
+#[test]
+fn auto_restore_applies_on_all_breaks() {
+    for brk in [' ', '.', ',', '!', '?', '\n', ';', ':'] {
+        assert_eq!(
+            break_word(Method::Telex, "text", brk),
+            "text",
+            "restore `text` on {brk:?}"
+        );
+        assert_eq!(
+            break_word(Method::Telex, "wow", brk),
+            "wow",
+            "restore `wow` on {brk:?}"
+        );
+    }
+}
+
+/// With auto_restore off, composed Vietnamese form stays unchanged.
+#[test]
+fn auto_restore_requires_enabled_setting() {
+    let mut eng = Engine::new(Method::Telex);
+    eng.set_auto_capitalize(false);
+    eng.set_auto_restore(false);
+    type_keys(&mut eng, "test");
+    assert_eq!(eng.composing(), "tét");
+    assert_eq!(eng.on_break(' ').text, "tét");
 }

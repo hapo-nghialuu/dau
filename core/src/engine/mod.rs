@@ -9,12 +9,20 @@
 //! Portions of this delta contract are derived from **Gõ Nhanh**
 //! (`core/src/engine/mod.rs` `Result { chars, action, backspace, count, flags }`):
 //!
-//! Copyright (c) 2025, Gõ Nhanh Contributors  
-//! SPDX-License-Identifier: BSD-3-Clause  
+//! Copyright (c) 2025, Gõ Nhanh Contributors
+//! SPDX-License-Identifier: BSD-3-Clause
 //! See the root `NOTICE` file for the full license text.
 //!
 //! Vietnamese Telex/VNI rules in this module and submodules are original Dấu
 //! (MIT) work and are **not** ported from Gõ Nhanh.
+//!
+//! ## Telex repeat-escape (structural, no timing)
+//!
+//! A repeated Telex trigger key that just transformed the buffer restores the
+//! pre-transform snapshot and appends the literal trigger. After escape, the
+//! engine keeps composing and remembers a word-level manual-escape flag so a
+//! later break commits the composed display, not the raw keystrokes. The flag
+//! resets at word boundary; backspace clears both pending and manual state.
 
 mod buffer;
 // Explicit path avoids ambiguity when leftover `syllable.rs` / `syllable/` coexist.
@@ -28,12 +36,9 @@ mod vni;
 
 use crate::config::Config;
 use buffer::{Buffer, CompChar};
-use ux::{
-    is_restore_break, is_sentence_end, match_shortcut, should_auto_restore,
-    should_keep_explicit_telex_revert,
-};
-
+use telex::Outcome;
 pub use ux::BreakOutput;
+use ux::{is_restore_break, is_sentence_end, match_shortcut, should_auto_restore};
 
 /// Input method selection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,6 +100,17 @@ pub fn display_delta(old: &str, new: &str) -> DisplayDelta {
     DisplayDelta { backspace, insert }
 }
 
+/// Pending repeat-escape state: trigger lowercase key + pre-transform Buffer
+/// snapshot. When the next Telex key matches the trigger case-insensitively,
+/// the engine restores the snapshot and appends the literal trigger.
+#[derive(Clone)]
+struct Pending {
+    /// Lowercase Telex trigger key (`s`/`f`/`r`/`x`/`j`/`z`/`a`/`e`/`o`/`w`/`d`).
+    trigger: char,
+    /// Buffer snapshot taken before the transform that armed this pending.
+    snapshot: Buffer,
+}
+
 /// Core composing engine for one word at a time.
 pub struct Engine {
     method: Method,
@@ -110,6 +126,10 @@ pub struct Engine {
     /// When false, IME is off (FFI layer skips composition).
     enabled: bool,
     shortcuts: Vec<(String, String)>,
+    /// Pending repeat-escape trigger + snapshot for the current word.
+    pending: Option<Pending>,
+    /// Word-level manual-escape flag (set whenever a repeat-escape fires).
+    manual_escape: bool,
     /// Loaded config (shipped + user merge). Used for strategy lookup via FFI.
     config: Config,
 }
@@ -127,13 +147,19 @@ impl Engine {
             auto_restore: true,
             enabled: true,
             shortcuts: Vec::new(),
+            pending: None,
+            manual_escape: false,
             config: Config::default(),
         }
     }
 
     pub fn set_method(&mut self, m: Method) {
         self.method = m;
-        // Keep buffer; method only affects future keys.
+        // Method change resets the pending trigger (the next Telex key cannot
+        // be the same key as one just processed under a different method).
+        // The manual-escape flag survives so an in-flight word still commits
+        // as composed on break.
+        self.pending = None;
     }
 
     /// Current input method.
@@ -228,10 +254,51 @@ impl Engine {
             return self.buffer.display();
         }
 
-        match self.method {
+        // Snapshot BEFORE the transform: a repeat-escape must restore the exact
+        // pre-transform buffer (e.g. `aa`→`â` restores to `a`, not `â`).
+        let pre_transform = self.buffer.snapshot();
+        let outcome = match self.method {
             Method::Telex => telex::process(&mut self.buffer, ch, is_upper),
             Method::Vni => vni::process(&mut self.buffer, ch, is_upper),
+        };
+
+        // Telex repeat-escape: if the previous Telex key armed a pending trigger
+        // and the new key matches it case-insensitively, restore the pre-transform
+        // snapshot and append the literal trigger with the new key's own case.
+        let mut escaped = false;
+        if self.method == Method::Telex
+            && outcome == Outcome::Literal
+            && ch.is_ascii_alphabetic()
+            && self
+                .pending
+                .as_ref()
+                .is_some_and(|p| p.trigger == ch.to_ascii_lowercase())
+        {
+            let pending = self.pending.take().expect("checked above");
+            self.buffer.restore(pending.snapshot);
+            self.buffer.push(CompChar::new(ch, is_upper));
+            self.manual_escape = true;
+            escaped = true;
         }
+
+        if !escaped {
+            // Different key (or non-escape literal): arm a fresh pending only
+            // when this key just transformed the buffer, using the snapshot
+            // taken before the transform. Literal outcomes arm nothing.
+            if self.method == Method::Telex
+                && outcome == Outcome::Transformed
+                && ch.is_ascii_alphabetic()
+            {
+                self.pending = Some(Pending {
+                    trigger: ch.to_ascii_lowercase(),
+                    snapshot: pre_transform,
+                });
+            } else {
+                self.pending = None;
+            }
+        }
+
+        self.buffer.display()
     }
 
     /// ESC: cancel transforms, return raw keystrokes; buffer enters restored state.
@@ -243,6 +310,8 @@ impl Engine {
             self.buffer.push(CompChar::new(ch, upper));
         }
         self.pass_through = true;
+        self.pending = None;
+        self.manual_escape = false;
         raw
     }
 
@@ -289,6 +358,8 @@ impl Engine {
     ///   content that was deleted. After an edit, raw is rebuilt from the
     ///   remaining bases (+ caps); marks and tones stay only on the buffer so
     ///   further Telex/VNI keys continue from the edited display state.
+    /// - Clears the pending repeat-escape state and the word-level manual-escape
+    ///   flag so the user can re-type without inheriting a stale escape context.
     /// - Returns `Some(new_display)` when a scalar was removed (including
     ///   `Some("")` when the last scalar was deleted).
     /// - Returns `None` when there is nothing to delete (empty compose). The
@@ -308,6 +379,8 @@ impl Engine {
                 self.raw_keys.clear();
                 self.pass_through = false;
             }
+            self.pending = None;
+            self.manual_escape = false;
             return None;
         }
 
@@ -317,11 +390,17 @@ impl Engine {
             // Full clear of the composing word — same blank state as a fresh word.
             self.raw_keys.clear();
             self.pass_through = false;
+            self.pending = None;
+            self.manual_escape = false;
             return Some(String::new());
         }
 
         // Keep raw/buffer consistent for continued typing and commit/restore.
         self.resync_raw_after_display_edit();
+        // Edit resets escape state: a fresh display scalar sequence is no
+        // longer tied to a prior trigger's snapshot.
+        self.pending = None;
+        self.manual_escape = false;
         Some(self.buffer.display())
     }
 
@@ -342,12 +421,22 @@ impl Engine {
         }
         let display = self.buffer.display();
 
-        // 1) Shortcuts (before auto-restore), exact match on raw, longest key.
+        // 1) Shortcuts win (exact match on raw, longest key). They apply even
+        // when the manual-escape flag is set — the user explicitly mapped the
+        // raw keystrokes.
         if let Some(exp) = match_shortcut(&self.raw_keys, &self.shortcuts) {
             return exp.to_string();
         }
 
-        // 2) Auto-restore English on word-break characters.
+        // 2) Manual-escape flag: the user explicitly typed a repeat-escape
+        // during this word, so commit the composed display, not the raw
+        // keystrokes. This path is driven entirely by an in-band repeat
+        // trigger, not a word list.
+        if self.manual_escape {
+            return display;
+        }
+
+        // 3) Phonotactic fallback (existing behavior, unchanged).
         if is_restore_break(brk)
             && should_auto_restore(
                 &self.raw_keys,
@@ -355,18 +444,16 @@ impl Engine {
                 self.auto_restore,
                 self.pass_through,
             )
-            && (self.method != Method::Telex
-                || !should_keep_explicit_telex_revert(&self.raw_keys, &display))
         {
             return self.raw_keys.clone();
         }
 
-        // 3) After ESC pass-through, commit raw (buffer already mirrors raw).
+        // 4) After ESC pass-through, commit raw (buffer already mirrors raw).
         if self.pass_through {
             return self.raw_keys.clone();
         }
 
-        // 4) Keep composed Vietnamese (or plain display).
+        // 5) Keep composed Vietnamese (or plain display).
         display
     }
 
@@ -374,6 +461,8 @@ impl Engine {
         self.buffer.clear();
         self.raw_keys.clear();
         self.pass_through = false;
+        self.pending = None;
+        self.manual_escape = false;
     }
 }
 

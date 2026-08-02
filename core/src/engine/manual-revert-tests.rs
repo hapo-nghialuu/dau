@@ -24,37 +24,67 @@ fn tesst_auto_restore_keeps_composed_telex_on_supported_breaks() {
 }
 
 #[test]
-fn common_english_words_with_telex_control_keys_commit_raw() {
-    for keys in [
-        "will",
-        "watt",
-        "coffee",
-        "effect",
-        "class",
-        "chessboard",
-        "crossfit",
-        "off",
-        "errs",
-        "cliffs",
-        "address",
-        "different",
-        "offer",
-        "staff",
-        "grass",
-        "press",
-        "issue",
-        "success",
-        "message",
-        "error",
-        "array",
-        "book",
-        "feel",
+fn repeat_escape_commits_composed_english() {
+    for (keys, expected) in [
+        ("beeen", "been"),
+        ("ass", "as"),
+        ("tesst", "test"),
+        ("aaa", "aa"),
+        ("ddd", "dd"),
+        ("wwork", "work"),
     ] {
         let mut engine = engine_with(Method::Telex, keys);
-        if matches!(keys, "coffee" | "effect" | "off" | "errs") {
-            assert_ne!(engine.composing(), keys, "restore precondition {keys}");
-        }
-        assert_eq!(engine.on_break(' ').text, keys, "commit {keys}");
+        assert_eq!(engine.raw(), keys, "raw before {keys}");
+        assert_eq!(engine.on_break(' ').text, expected, "commit {keys}");
+    }
+}
+
+#[test]
+fn repeated_telex_triggers_cover_daily_english_words() {
+    for (keys, expected) in [
+        ("usser", "user"),
+        ("offf", "off"),
+        ("terrminal", "terminal"),
+        ("texxt", "text"),
+        ("majjor", "major"),
+        ("coool", "cool"),
+    ] {
+        let mut engine = engine_with(Method::Telex, keys);
+        assert_eq!(engine.raw(), keys, "raw before {keys}");
+        assert_eq!(engine.on_break(' ').text, expected, "commit {keys}");
+    }
+}
+
+#[test]
+fn telex_w_repeat_escape_restores_literal_w_prefix() {
+    let mut engine = Engine::new(Method::Telex);
+    engine.set_auto_capitalize(false);
+
+    engine.process_char('w', false);
+    assert_eq!(engine.composing(), "ư");
+
+    engine.process_char('w', false);
+    assert_eq!(engine.composing(), "w");
+    assert_eq!(engine.on_break('.').text, "w");
+
+    let mut engine = engine_with(Method::Telex, "wwork");
+    assert_eq!(engine.composing(), "work");
+    assert_eq!(engine.on_break(' ').text, "work");
+}
+
+#[test]
+fn telex_z_and_caps_repeat_escape_oracles() {
+    for (keys, expected) in [
+        ("az", "az"),
+        ("asz", "a"),
+        ("aszz", "áz"),
+        ("assz", "asz"),
+        ("WW", "W"),
+        ("AAA", "AA"),
+        ("DDD", "DD"),
+    ] {
+        let mut engine = engine_with(Method::Telex, keys);
+        assert_eq!(engine.on_break(' ').text, expected, "{keys}");
     }
 }
 

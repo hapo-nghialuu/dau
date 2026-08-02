@@ -1,24 +1,23 @@
-# Kết quả kiểm thử gõ tiếng Việt — `dau-core` + regression gate (TG-06)
+# Kết quả kiểm thử gõ tiếng Việt — `dau-core` + regression repeat-escape
 
-> **Ngày verify:** 2026-07-25  
+> **Ngày verify:** 2026-08-02
 > **Nhánh:** `feature/macos-start`  
-> **HEAD code (product):** `7523970` (TG-05); TG-00 `d678cd4`; TG-01..04 `5eb43fc`  
 > **Phạm vi file này:** biên nhận **deterministic** (Rust core + corpus).  
 > **Không claim** live app smoke macOS (TextEdit/Terminal/browser/Electron / idle 30 phút) — xem `platforms/macos/README.md` §4b.
 
 ## Lệnh verify (chạy lại)
 
 ```bash
-# Formatting (core only)
-cargo fmt --manifest-path core/Cargo.toml --check
-# Nếu fail: cargo fmt --manifest-path core/Cargo.toml  (chỉ formatting)
+cd core
+cargo fmt --all -- --check
+cargo test --lib
+cargo test --test round_trip_vietnamese_corpus
+cargo test --test daily_sentence_corpus
+```
 
-# Core unit + corpus
-cargo test --manifest-path core/Cargo.toml
-cargo test --manifest-path core/Cargo.toml --test full_vietnamese_corpus -- --nocapture
-# report artifact: core/target/corpus-report.md
+MacOS unit tests remain separate from core receipt:
 
-# macOS unit (không thay live smoke)
+```bash
 xcodebuild test \
   -project platforms/macos/Dau.xcodeproj \
   -scheme Dau \
@@ -34,6 +33,18 @@ xcodebuild test \
 | Corpus detail (nocapture) | **143** Telex paired PASS / 0 FAIL; **143** VNI paired PASS / 0 FAIL; **34** solo PASS / 0 FAIL; ALL FAIL **0** |
 | `xcodebuild test … -scheme Dau -destination 'platform=macOS'` | **PASS**: **240** tests, 0 failure (`** TEST SUCCEEDED **`) |
 | Live app matrix / idle-sleep soak | **Chưa chạy** — không PASS |
+
+## Receipt run (2026-08-02, repeat-escape)
+
+| Kiểm tra | Kết quả (đo thực tế, run này) |
+|----------|-------------------------------|
+| `cargo fmt --manifest-path core/Cargo.toml --all -- --check` | **PASS** |
+| `cargo test --manifest-path core/Cargo.toml` | **PASS**: **124** lib unit + daily/full/paired/round-trip integration + doc-tests; 0 fail |
+| `cargo test --test round_trip_vietnamese_corpus` | **PASS**: **1** test; 0 fail; Telex/VNI **2000 PASS / 0 SKIP-KNOWN / 0 FAIL** |
+| `cargo test --test daily_sentence_corpus` | **PASS**: **1050** alphabetic tokens across **130 unique** daily-use EN+VI sentences; Telex + VNI active |
+| Telex collision behavior | Vietnamese wins: `mix`→`mĩ`, `box`→`bõ`, `six`→`sĩ`, `this`→`thí`, `been`→`bên`, `as`→`á`, `is`→`í`, `us`→`ú`, `or`→`ỏ` |
+| Explicit raw-English escape | Repeat/manual escape required: `wwork`→`work`, `beeen`→`been`, `thiss`→`this`, `ass`→`as`, `tesst`→`test`, `aaa`→`aa`, `ddd`→`dd` |
+| Corpus skip policy | Không còn accepted known gap trong top-2000 |
 
 ## Corpus paired / solo (CORPUS-04 strict)
 
@@ -65,24 +76,47 @@ Artifact: `core/target/corpus-report.md` (sinh cùng run corpus).
 | đưa | `dduaw` / `dduwa` | (solo Telex; paired qua corpus khác) |
 | đâu / đầu | `ddaau` / `ddaauf` | `d9a6u` / `d9a6u2` |
 
-### Engine gap đã biết (không trong paired strict)
+### Engine gap đã đóng
 
 | Gõ chuẩn (UniKey-style) | Kỳ vọng | Thực tế engine | Ghi chú |
 |-------------------------|----------|----------------|---------|
-| Telex `gif` / VNI `gi2` | gì | `gif` / `gi2` (không đổi) | `gi` + thanh chưa map. Paired dùng *nào* (`nafo` / `na2o`). |
+| Telex `gif` / VNI `gi2` | gì | `gì` / `gì` | Unit `gi_bare_tones` pass; ghi chú gap cũ đã stale. |
 
-## English restore + plain (unit, ngoài corpus file)
+## Telex auto-restore + repeat-escape (unit, ngoài corpus file)
 
-Nguồn: `core/src/engine/ux_tests.rs`, `evidence_tests.rs` (auto-restore on break).
+Nguồn: `core/src/engine/ux_tests.rs`, `core/src/engine/manual-revert-tests.rs`, `evidence_tests.rs`.
 
 | Nhóm | Cases (keys → commit/break) | File / test |
-|------|----------------------------|-------------|
-| English restore (Space) | `text`, `expect`, `with`, `wow`, `perfect`, `tesla`, `student`, `software`, `keyboard` → raw | `auto_restore_english_words` (**9** words) |
-| English + punct break | `text.` `with,` `wow!` → raw | `auto_restore_also_on_punctuation` |
+|------|-----------------------------|-------------|
+| Phonotactic + high-confidence raw restore | `text`, `expect`, `with`, `wow`, `perfect`, `tesla`, `case`, `luxury`, `things`, `kings`, `of`, `if`, `see`, `student`, `software`, `keyboard` → raw | `auto_restore_english_words` |
+| Restore trên punctuation | `text.` `with,` `wow!` → raw | `auto_restore_also_on_punctuation` |
 | Restore off | `text` + Space → `tẽt` (composed giữ) | `auto_restore_can_be_disabled` |
-| Keep valid VN | `tieengs`→`tiếng`, `vieejt`→`việt`; multi-`w` `ươ*` | `auto_restore_keeps_*` |
+| Vietnamese hợp lệ | `tieengs`→`tiếng`, `vieejt`→`việt`; multi-`w` `ươ*` | `auto_restore_keeps_*` |
+| Repeat/manual escape | `wwork`→`work`, `beeen`→`been`, `ass`→`as`, `tesst`→`test`, `aaa`→`aa`, `ddd`→`dd` | `repeat_escape_commits_composed_english`, `telex_w_repeat_escape_restores_literal_w_prefix` |
+| Vietnamese wins | `mix`→`mĩ`, `box`→`bõ`, `six`→`sĩ`, `this`→`thí`, `been`→`bên`, `as`→`á`, `is`→`í`, `us`→`ú`, `or`→`ỏ` | `telex_vietnamese_wins_over_english_collisions` |
 | English progressive / delete | `delete` từng key + Space `delete ` | evidence + mac pipeline tests |
-| Mix-box stay VN | `mix`→`mĩ`, `box`→`bõ` | `auto_restore_limits_mix_box_stay_vietnamese` |
+
+## Top-2000 round-trip honest (2026-08-02)
+
+Nguồn: `core/tests/round_trip_vietnamese_corpus.rs` (oracle độc lập qua bảng Unicode, không dùng engine internals).
+
+| Method | Kết quả |
+|--------|---------|
+| Telex | **2000 PASS / 0 SKIP-KNOWN / 0 FAIL** |
+| VNI | **2000 PASS / 0 SKIP-KNOWN / 0 FAIL** |
+
+- Corpus không còn bỏ qua collision Telex.
+- Continuous whole-text (2000 từ + Space): **PASS** cả Telex và VNI.
+- `đắk`/`lắk` đã gõ được bằng exception final-`k` hẹp cho nucleus `ă`; `KNOWN_GAPS` hiện rỗng.
+
+## Daily EN+VI sentence fixture (2026-08-02)
+
+Nguồn: `core/tests/daily_sentence_corpus.rs` + `core/tests/data/daily-english-vietnamese-sentences.tsv`.
+
+- **1050** alphabetic tokens từ **130 câu unique**, không dùng repeat multiplier.
+- TSV 3 cột: `telex_keys`, `vni_keys`, `expected_text`; mỗi row là câu có whitespace + punctuation, không phải word-pair rời.
+- Cover English khi Telex/VNI active: `case`, `luxury`, `things`, `kings`, `of`, `if`, `see`, `wwork`, `beeen`, `thiss`, `iss`, `tesst`, `keeep`, `carre`, `neww`, `lisst`, `currsor`, `barr`, `offf`, `docss`, `roww`/`rowws`, `dataa`, input/text area/terminal/code/email/browser/address bar/cursor.
+- Cover Vietnamese everyday: chào bạn, hôm nay, công việc, buổi sáng, tiếng Việt, dữ liệu, máy tính, mạng, phím, nhà trường.
 
 ## Edit / Backspace sequences (unit contract TG-03/TG-04)
 
@@ -116,10 +150,10 @@ Core (`backspace_one_display_scalar` / FFI `dau_backspace`) + mac pipeline/sessi
 
 | File | Vai trò |
 |------|---------|
-| `core/tests/full_vietnamese_corpus.rs` | Dataset paired + solo; gate strict |
+| `core/tests/round_trip_vietnamese_corpus.rs` | Top-2000 honest; Telex và VNI không còn accepted known gap |
 | `core/target/corpus-report.md` | Bảng PASS/FAIL sinh **cùng run** |
-| `core/src/engine/evidence_tests.rs` / `ux_tests.rs` | Exact `dduaw`, English restore, Backspace edit |
-| `platforms/macos/Tests/*` | Bridge/session/mapper; 240 XCTest |
+| `core/src/engine/evidence_tests.rs` / `ux_tests.rs` / `manual-revert-tests.rs` | Exact `dduaw`, auto-restore, repeat-escape, Backspace edit |
+| `platforms/macos/Tests/*` | Bridge/session/mapper; **293** XCTest (re-run 2026-08-01) |
 | `docs/vietnamese-typing-corpus-results.md` | Receipt + tóm tắt (file này) |
 | `plans/typing-gaps-dau-vs-gonhanh.md` | Status TG packages + S7 soak còn mở |
 

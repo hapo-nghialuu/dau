@@ -92,18 +92,22 @@ fn method_name(method: Method) -> &'static str {
     }
 }
 
-/// Known gaps theo quyết định sản phẩm 2026-07-26: coda `k` (địa danh Tây Nguyên
-/// gốc Ê Đê như Đắk Lắk) nằm ngoài chuẩn âm tiết tiếng Việt, chưa hỗ trợ.
-/// Mục ở đây vẫn phải FAIL thật — nếu engine bắt đầu gõ được thì test đỏ,
-/// buộc xoá khỏi danh sách (chống mục nát known-gap).
-const KNOWN_GAPS: &[&str] = &["đắk", "lắk"];
+/// No accepted known gaps. Keep this empty so any future corpus miss is a real
+/// failure unless a product decision explicitly reintroduces a documented gap.
+const KNOWN_GAPS: &[&str] = &[];
 
 fn is_known_gap(word: &str) -> bool {
     KNOWN_GAPS.contains(&word)
 }
 
-fn investigate_words(words: &[&str], method: Method, failures: &mut Vec<String>) -> usize {
+/// Returns `(pass, skip)` where `pass` counts real engine successes and `skip`
+/// counts known-gap words. Known-gap words are reported as skipped and are
+/// **never** counted as successful engine output (`pass`). If the engine ever
+/// starts producing a known-gap word correctly, that is a failure that forces
+/// removing it from [`KNOWN_GAPS`].
+fn investigate_words(words: &[&str], method: Method, failures: &mut Vec<String>) -> (usize, usize) {
     let mut pass = 0;
+    let mut skip = 0;
     for (index, &expect) in words.iter().enumerate() {
         let keys = encode(expect, method);
         let (display, committed) = type_until_space(method, &keys);
@@ -119,7 +123,7 @@ fn investigate_words(words: &[&str], method: Method, failures: &mut Vec<String>)
                     "SKIP-KNOWN | {}#{index} | `{expect}` (coda k ngoài chuẩn)",
                     method_name(method)
                 );
-                pass += 1;
+                skip += 1;
             }
             continue;
         }
@@ -132,16 +136,21 @@ fn investigate_words(words: &[&str], method: Method, failures: &mut Vec<String>)
             ));
         }
     }
-    pass
+    (pass, skip)
 }
 
-fn investigate_continuous(words: &[&str], method: Method, failures: &mut Vec<String>) -> bool {
+fn investigate_continuous(
+    words: &[&str],
+    method: Method,
+    failures: &mut Vec<String>,
+) -> (bool, usize, usize) {
     let mut engine = Engine::new(method);
     engine.set_auto_capitalize(false);
     engine.set_auto_restore(true);
     let mut actual = String::new();
     let mut expected_parts: Vec<String> = Vec::with_capacity(words.len());
     let mut word_failures = 0;
+    let mut skipped = 0;
     for (index, &expect) in words.iter().enumerate() {
         let keys = encode(expect, method);
         for ch in keys.chars() {
@@ -153,8 +162,9 @@ fn investigate_continuous(words: &[&str], method: Method, failures: &mut Vec<Str
         if committed != expect {
             if is_known_gap(expect) {
                 // Known gap: giữ nguyên output thật trong expected để whole-text
-                // so khớp phần còn lại; không tính là failure.
+                // so khớp phần còn lại; không tính là failure hay pass.
                 expected_parts.push(committed.clone());
+                skipped += 1;
                 continue;
             }
             word_failures += 1;
@@ -176,14 +186,15 @@ fn investigate_continuous(words: &[&str], method: Method, failures: &mut Vec<Str
     let expected = format!("{} ", expected_parts.join(" "));
     let whole_pass = actual == expected;
     println!(
-        "CONTINUOUS {} | words={} | PASS={} | FAIL={} | whole_text={}",
+        "CONTINUOUS {} | words={} | PASS={} | SKIP-KNOWN={} | FAIL={} | whole_text={}",
         method_name(method),
         words.len(),
-        words.len() - word_failures,
+        words.len() - word_failures - skipped,
+        skipped,
         word_failures,
         if whole_pass { "PASS" } else { "FAIL" }
     );
-    whole_pass
+    (whole_pass, words.len() - word_failures - skipped, skipped)
 }
 
 #[test]
@@ -204,18 +215,20 @@ fn round_trip_top_2000_vietnamese_corpus() {
     );
 
     let mut failures = Vec::new();
-    let telex_pass = investigate_words(&words, Method::Telex, &mut failures);
-    let vni_pass = investigate_words(&words, Method::Vni, &mut failures);
-    let telex_whole = investigate_continuous(&words, Method::Telex, &mut failures);
-    let vni_whole = investigate_continuous(&words, Method::Vni, &mut failures);
+    let (telex_pass, telex_skip) = investigate_words(&words, Method::Telex, &mut failures);
+    let (vni_pass, vni_skip) = investigate_words(&words, Method::Vni, &mut failures);
+    let (telex_whole, _, _) = investigate_continuous(&words, Method::Telex, &mut failures);
+    let (vni_whole, _, _) = investigate_continuous(&words, Method::Vni, &mut failures);
 
     println!(
-        "SUMMARY | words={} | Telex={} PASS / {} FAIL | VNI={} PASS / {} FAIL | continuous Telex={} | continuous VNI={}",
+        "SUMMARY | words={} | Telex={} PASS / {} SKIP-KNOWN / {} FAIL | VNI={} PASS / {} SKIP-KNOWN / {} FAIL | continuous Telex={} | continuous VNI={}",
         words.len(),
         telex_pass,
-        words.len() - telex_pass,
+        telex_skip,
+        words.len() - telex_pass - telex_skip,
         vni_pass,
-        words.len() - vni_pass,
+        vni_skip,
+        words.len() - vni_pass - vni_skip,
         if telex_whole { "PASS" } else { "FAIL" },
         if vni_whole { "PASS" } else { "FAIL" },
     );
@@ -227,6 +240,16 @@ fn round_trip_top_2000_vietnamese_corpus() {
         "continuous whole-text assertion failed: Telex={}, VNI={}",
         telex_whole,
         vni_whole
+    );
+    assert_eq!(
+        vni_skip,
+        KNOWN_GAPS.len(),
+        "VNI must skip only known-gap words"
+    );
+    assert_eq!(
+        telex_skip,
+        KNOWN_GAPS.len(),
+        "Telex must skip only known-gap words"
     );
     assert!(
         failures.is_empty(),

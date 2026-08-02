@@ -24,10 +24,11 @@ pub fn is_sentence_end(brk: char) -> bool {
 
 /// Whether the finished word should commit raw keystrokes instead of composed VN.
 ///
-/// Principle: restore **only** when the composed form is not a valid committed
-/// Vietnamese syllable. Valid results (including multi-`w` Telex like
-/// `truwowngf`→`trường`) are always kept. English like `text`/`wow` restores
-/// because they fail commit-time phonotactics, not because of raw key counts.
+/// Most English restores are still phonotactic: `text`/`wow` restore because
+/// the composed display is not a complete Vietnamese syllable. A few high-
+/// confidence daily-English patterns (`case`, `luxury`, `things`, `see`, …)
+/// also restore even when the transient display looks Vietnamese-valid. Keep
+/// this intentionally pattern-based, not dictionary-based.
 pub fn should_auto_restore(
     raw: &str,
     buf: &Buffer,
@@ -37,20 +38,39 @@ pub fn should_auto_restore(
     if !auto_restore || pass_through || raw.is_empty() {
         return false;
     }
+    if is_high_confidence_english(raw) {
+        return true;
+    }
     !is_valid_committed_syllable(buf)
 }
 
-/// Keep explicitly supported Telex undo sequences after English auto-restore.
-///
-/// The raw keystrokes alone cannot distinguish deliberate undo (`tesst` →
-/// `test`) from genuine doubled English letters (`coffee`, `errs`, `cliffs`).
-/// Keep this list conservative until a real English lexicon is available.
-pub fn should_keep_explicit_telex_revert(raw: &str, display: &str) -> bool {
-    const REVERTS: &[(&str, &str)] = &[("tesst", "test")];
+fn is_high_confidence_english(raw: &str) -> bool {
+    let lower = raw.to_ascii_lowercase();
+    let word = lower.as_str();
 
-    REVERTS.iter().any(|(typed, shown)| {
-        raw.eq_ignore_ascii_case(typed) && display.eq_ignore_ascii_case(shown)
-    })
+    // Product policy: these short collisions intentionally compose Vietnamese.
+    // English variants use explicit repeat/manual escape (`beeen`, `thiss`, …).
+    const VIETNAMESE_WINS: &[&str] = &["mix", "box", "six", "this", "been", "as", "is", "us", "or"];
+    if VIETNAMESE_WINS.contains(&word) {
+        return false;
+    }
+
+    // Rare as standalone Vietnamese output, very common in daily English.
+    if matches!(word, "of" | "if" | "see" | "luxury" | "expect") {
+        return true;
+    }
+
+    // `things`/`kings`: English `-ing(s)` + Telex tone marker at the end.
+    if word.ends_with("ing") || word.ends_with("ings") {
+        return true;
+    }
+
+    // `case`/`base`/`use`: final `s` before silent/final `e` is English-like.
+    if word.len() >= 3 && word.ends_with("se") {
+        return true;
+    }
+
+    false
 }
 
 /// Longest exact shortcut match for `raw` (case-insensitive key compare).
@@ -87,11 +107,27 @@ mod tests {
     }
 
     #[test]
+    fn restore_high_confidence_english_even_when_display_valid() {
+        for keys in ["case", "luxury", "things", "kings", "of", "if", "see"] {
+            let (raw, buf) = type_telex(keys);
+            assert!(
+                should_auto_restore(&raw, &buf, true, false),
+                "{keys} → {} should restore raw English",
+                buf.display()
+            );
+        }
+    }
+
+    #[test]
     fn keep_mix_box() {
-        let (raw, buf) = type_telex("mix");
-        assert!(!should_auto_restore(&raw, &buf, true, false));
-        let (raw, buf) = type_telex("box");
-        assert!(!should_auto_restore(&raw, &buf, true, false));
+        for keys in ["mix", "box", "six", "this", "been", "as", "is", "us", "or"] {
+            let (raw, buf) = type_telex(keys);
+            assert!(
+                !should_auto_restore(&raw, &buf, true, false),
+                "{keys} → {} should keep Vietnamese",
+                buf.display()
+            );
+        }
     }
 
     #[test]

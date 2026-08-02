@@ -41,7 +41,7 @@ pub fn is_valid_syllable(buf: &Buffer) -> bool {
 /// Commit-time syllable check: base 5 laws plus phonotactic commit constraints.
 ///
 /// Extra rules (composition still uses the looser [`is_valid_syllable`]):
-/// - Finals `p/t/c/ch` only allow no-tone, sắc, or nặng — not huyền/hỏi/ngã
+/// - Finals `p/t/c/ch/k` only allow no-tone, sắc, or nặng — not huyền/hỏi/ngã
 ///   (catches English like `text`→`tẽt` while keeping open `mix`→`mĩ`).
 /// - Open nucleus `ươ` (no coda) is not a complete written syllable — rejects
 ///   bare `wow`→`ươ` while keeping `trường`/`đường`/… with coda or glide.
@@ -60,7 +60,7 @@ pub fn is_valid_committed_syllable(buf: &Buffer) -> bool {
         .iter()
         .map(|c| c.base)
         .collect();
-    if matches!(coda.as_str(), "p" | "t" | "c" | "ch") {
+    if matches!(coda.as_str(), "p" | "t" | "c" | "ch" | "k") {
         for c in chars {
             if matches!(c.tone, Tone::Grave | Tone::Hook | Tone::Tilde) {
                 return false;
@@ -136,7 +136,11 @@ fn validate_laws(buf: &Buffer) -> Result<(), &'static str> {
     }
 
     let coda = &bases[parts.coda.0..parts.coda.1];
-    if !coda.is_empty() && !is_valid_coda(coda) && !is_semivowel_coda(coda) {
+    if !coda.is_empty()
+        && !is_valid_coda(coda)
+        && !is_semivowel_coda(coda)
+        && !is_breve_a_k_exception(chars, parts.nucleus, coda)
+    {
         return Err("law5: invalid coda");
     }
 
@@ -171,6 +175,18 @@ fn is_ua_breve_nucleus(chars: &[CompChar], nucleus: (usize, usize)) -> bool {
     let u = &chars[nucleus.0];
     let a = &chars[nucleus.0 + 1];
     u.base == 'u' && u.mark == Mark::None && a.base == 'a' && a.mark == Mark::Breve
+}
+
+/// Product exception for Tây Nguyên proper names such as `Đắk Lắk`.
+/// Keep this deliberately narrower than adding `k` as a general Vietnamese
+/// coda, because broad final-k acceptance makes too many English tokens look
+/// Vietnamese-valid.
+fn is_breve_a_k_exception(chars: &[CompChar], nucleus: (usize, usize), coda: &str) -> bool {
+    if coda != "k" || nucleus.1 - nucleus.0 != 1 {
+        return false;
+    }
+    let a = &chars[nucleus.0];
+    a.base == 'a' && a.mark == Mark::Breve
 }
 
 fn mark_compatible(c: &CompChar) -> bool {

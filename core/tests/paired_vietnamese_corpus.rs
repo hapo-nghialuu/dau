@@ -835,8 +835,8 @@ fn common_paired() -> &'static [Paired] {
             vni: "ai",
             group: "extra",
         },
-        // Note: Telex `gif` / VNI `gi2` for "gì" is a known engine gap (gi + tone).
-        // Use "nào" as paired stand-in; see docs/vietnamese-typing-corpus-results.md.
+        // `gif` / `gi2` for "gì" is covered by gi_bare_tones unit tests.
+        // Keep "nào" here as a broad paired-corpus tone sample.
         Paired {
             expect: "nào",
             telex: "nafo",

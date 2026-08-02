@@ -5,8 +5,12 @@ use crate::engine::syllable::is_valid_syllable;
 use crate::engine::tone::{self, Mark, Tone};
 use crate::engine::util::{find_rightmost, find_uo_pair};
 
-/// Process one VNI key into `buf`.
-pub fn process(buf: &mut Buffer, key: char, caps: bool) -> String {
+use crate::engine::telex::Outcome;
+
+/// Process one VNI key into `buf`. VNI does not participate in the structural
+/// repeat-escape: it always returns [`Outcome::Literal`] so the engine never
+/// arms a pending snapshot for VNI keys.
+pub fn process(buf: &mut Buffer, key: char, caps: bool) -> Outcome {
     match key {
         '1' => try_tone(buf, Tone::Acute, '1', caps),
         '2' => try_tone(buf, Tone::Grave, '2', caps),
@@ -26,7 +30,7 @@ pub fn process(buf: &mut Buffer, key: char, caps: bool) -> String {
         }
         ch => push_raw(buf, ch, caps),
     }
-    buf.display()
+    Outcome::Literal
 }
 
 fn try_tone(buf: &mut Buffer, tone: Tone, raw: char, caps: bool) {
