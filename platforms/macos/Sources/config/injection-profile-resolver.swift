@@ -24,6 +24,8 @@ final class InjectionProfileResolver {
         .textField: .backspaceFast,
         .comboBox: .selection,
         .addressBar: .emptyCharPrefix,
+        /// Secure / password field — hard passthrough (EN), never inject/backspace/compose.
+        .secure: .passthrough,
         .other: .backspaceFast,
     ]
 
@@ -59,6 +61,20 @@ final class InjectionProfileResolver {
     /// 3. Role fallback (`context.role`) when both are absent.
     /// 4. Shipped `[default]` / MVP safe default.
     func resolve(context: AppContextSnapshot) -> ResolvedInjectionSettings {
+        // Secure / password field: hard passthrough. Never compose, backspace, or
+        // inject — wins over any user/shipped override and the role fallback.
+        if context.role == .secure {
+            return materialize(
+                InjectionProfile(
+                    bundleId: context.bundleId,
+                    enabled: true,
+                    engineMethod: nil,
+                    injectionMethod: .passthrough,
+                    delays: .zero
+                ),
+                source: .securePassthrough
+            )
+        }
         if let bundleId = context.bundleId {
             if let user = store.profile(forBundleId: bundleId) {
                 return materialize(user, source: .userOverride)

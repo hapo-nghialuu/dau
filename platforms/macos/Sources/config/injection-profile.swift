@@ -20,6 +20,8 @@ enum AXRoleCategory: String, Codable, CaseIterable, Sendable, Equatable {
     case terminal
     case editor
     case textField
+    /// Secure / password field — never compose or inject (hard passthrough EN).
+    case secure
     case comboBox
     case addressBar
     case other
@@ -95,6 +97,8 @@ enum ProfileResolutionSource: String, Sendable, Equatable {
     case shippedBundle
     /// Role-based fallback for apps with no user / shipped bundle profile.
     case roleFallback
+    /// Secure / password field — hard passthrough (never compose or inject).
+    case securePassthrough
     case safeDefault
 }
 

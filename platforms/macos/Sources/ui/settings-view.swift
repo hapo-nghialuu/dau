@@ -850,6 +850,7 @@ struct SettingsAdvancedPage: View {
         case .userOverride: return "user override"
         case .shippedBundle: return "shipped profiles.toml"
         case .roleFallback: return "role fallback"
+        case .securePassthrough: return "secure field passthrough"
         case .safeDefault: return "safe default"
         }
     }

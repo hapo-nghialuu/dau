@@ -68,6 +68,13 @@ final class AXFocusedRoleProvider: AXRoleProviding {
             .joined(separator: " ")
             .lowercased()
 
+        // Password / secure field — never compose or inject. Highest priority:
+        // a secure field must win over any addressBar / textField / terminal token below.
+        // Note: kAXSecureTextFieldRole is not exposed in Swift, use the literal role name.
+        if role == "AXSecureTextField"
+            || blob.contains("secure") || blob.contains("password") {
+            return .secure
+        }
         if blob.contains("url") || blob.contains("address") {
             return .addressBar
         }

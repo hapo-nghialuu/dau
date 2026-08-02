@@ -444,6 +444,60 @@ final class InjectionProfileTests: XCTestCase {
         XCTAssertEqual(r.effectiveInjectionMethod, .passthrough)
     }
 
+    // MARK: - Secure field hard passthrough (Phase 2)
+
+    /// Secure/password role must resolve to hard passthrough EN: typing off,
+    /// passthrough delivery, zero delays — and a dedicated source.
+    func testSecureRoleResolvesToHardPassthrough() {
+        let (store, defaults, suite) = makeStore(shipped: defaultOnlyShipped)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let resolver = InjectionProfileResolver(store: store)
+        let ctx = AppContextSnapshot(bundleId: "com.unknown.Login", appName: nil, role: .secure, generation: 1)
+        let r = resolver.resolve(context: ctx)
+        XCTAssertEqual(r.source, .securePassthrough)
+        XCTAssertFalse(r.typingEnabled)
+        XCTAssertEqual(r.injectionMethod, .passthrough)
+        XCTAssertEqual(r.effectiveInjectionMethod, .passthrough)
+        XCTAssertEqual(r.delays, .zero)
+    }
+
+    /// Secure must win over a user override that would otherwise type in that app.
+    func testSecureRoleBeatsUserOverride() {
+        let (store, defaults, suite) = makeStore(shipped: defaultOnlyShipped)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        store.setProfile(
+            InjectionProfile(
+                enabled: true,
+                engineMethod: .telex,
+                injectionMethod: .charByChar,
+                delays: .charByChar
+            ),
+            forBundleId: "com.example.Login"
+        )
+        let resolver = InjectionProfileResolver(store: store)
+        let ctx = AppContextSnapshot(bundleId: "com.example.Login", appName: nil, role: .secure, generation: 1)
+        let r = resolver.resolve(context: ctx)
+        XCTAssertEqual(r.source, .securePassthrough)
+        XCTAssertFalse(r.typingEnabled)
+        XCTAssertEqual(r.effectiveInjectionMethod, .passthrough)
+    }
+
+    /// Secure must win over a shipped bundle row (e.g. Terminal shipped profile
+    /// must not inject into a password prompt inside that terminal).
+    func testSecureRoleBeatsShippedBundle() {
+        let (store, defaults, suite) = makeStore(shipped: sampleShipped) // Terminal → backspaceSlow
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let resolver = InjectionProfileResolver(store: store)
+        let ctx = AppContextSnapshot(bundleId: "com.apple.Terminal", appName: "Terminal", role: .secure, generation: 1)
+        let r = resolver.resolve(context: ctx)
+        XCTAssertEqual(r.source, .securePassthrough)
+        XCTAssertFalse(r.typingEnabled)
+        XCTAssertEqual(r.effectiveInjectionMethod, .passthrough)
+    }
+
     // MARK: - Browser host regression (no broad browser bundle rows)
 
     /// Known browser address bar must resolve to emptyCharPrefix via role — NOT be
@@ -799,6 +853,24 @@ final class InjectionProfileTests: XCTestCase {
     func testClassifyPlainTextField() {
         XCTAssertEqual(AXFocusedRoleProvider.category(role: kAXTextFieldRole as String), .textField)
         XCTAssertEqual(AXFocusedRoleProvider.category(role: "AXTextField", identifier: "search"), .textField)
+    }
+
+    func testClassifySecureTextField() {
+        // kAXSecureTextFieldRole is not exposed in Swift — use the literal role name.
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: "AXSecureTextField"), .secure)
+        XCTAssertEqual(AXFocusedRoleProvider.category(role: "AXSecureTextField", description: "password"), .secure)
+    }
+
+    /// Secure must win over address/text-field tokens that would otherwise classify first.
+    func testClassifySecureBeatsAddressBarAndTextField() {
+        XCTAssertEqual(
+            AXFocusedRoleProvider.category(role: "AXSecureTextField", identifier: "url"),
+            .secure
+        )
+        XCTAssertEqual(
+            AXFocusedRoleProvider.category(role: "AXTextField", description: "password"),
+            .secure
+        )
     }
 
     func testClassifyInconclusiveReturnsNil() {
