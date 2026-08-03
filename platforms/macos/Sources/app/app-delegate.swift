@@ -66,7 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             reason: "Dấu keyboard event tap latency"
         )
 
-        // Capability snapshot for inject path — no prompt on launch.
+        // Snapshot first; launch recovery requests post-event access only after UI/tap setup.
         refreshPostEventAccess(prompt: false)
         warmUpEventPostChannel()
 
@@ -154,11 +154,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startAXPolling()
         attemptStartTap(prompt: false)
 
-        // First-run / recovery: show setup until AX trusted AND keyboard listener runs.
+        // First-run / recovery: show setup until AX, tap, and post-event access are ready.
         // Trusted-but-tap-failed must not be treated as success (ONBOARD-03).
         if !state.accessibilityTrusted || !state.eventTapRunning || !state.postEventAccessGranted {
             onboarding.show()
         }
+        requestPostEventAccessAtLaunchIfNeeded()
 
         // SET-06: mirror real login-item status; keep UI in sync with SMAppService.
         refreshLaunchAtLoginState()
@@ -166,6 +167,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         checkForUpdates()
 
         fputs("[dau] app launched \(state.versionLabel) (TypingSession hot path, TG-00 fail-open)\n", stderr)
+    }
+
+    /// Finder/LaunchServices does not inherit Terminal's post-event TCC context.
+    /// Request once after the setup UI exists; never prompt from keyboard/recovery paths.
+    private func requestPostEventAccessAtLaunchIfNeeded() {
+        guard LaunchPostEventRecoveryPolicy.shouldRequest(
+            accessibilityTrusted: state.accessibilityTrusted,
+            eventTapRunning: state.eventTapRunning,
+            postEventAccessGranted: state.postEventAccessGranted,
+            didRequestThisProcess: SyntheticPostAccess.didRequestThisProcess
+        ) else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  LaunchPostEventRecoveryPolicy.shouldRequest(
+                      accessibilityTrusted: self.state.accessibilityTrusted,
+                      eventTapRunning: self.state.eventTapRunning,
+                      postEventAccessGranted: self.state.postEventAccessGranted,
+                      didRequestThisProcess: SyntheticPostAccess.didRequestThisProcess
+                  ) else { return }
+            self.refreshPostEventAccess(prompt: true)
+            self.syncEventTapStateToUI()
+            self.syncUI()
+            self.onboarding.refreshStatus()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

@@ -204,6 +204,49 @@ final class AppLifecycleTests: XCTestCase {
         XCTAssertFalse(SyntheticPostAccess.didRequestThisProcess)
     }
 
+    func testLaunchPostEventRecoveryRequestsOnlyWhenFinderLaunchIsNotReady() {
+        XCTAssertTrue(
+            LaunchPostEventRecoveryPolicy.shouldRequest(
+                accessibilityTrusted: true,
+                eventTapRunning: true,
+                postEventAccessGranted: false,
+                didRequestThisProcess: false
+            )
+        )
+        XCTAssertFalse(
+            LaunchPostEventRecoveryPolicy.shouldRequest(
+                accessibilityTrusted: false,
+                eventTapRunning: true,
+                postEventAccessGranted: false,
+                didRequestThisProcess: false
+            )
+        )
+        XCTAssertFalse(
+            LaunchPostEventRecoveryPolicy.shouldRequest(
+                accessibilityTrusted: true,
+                eventTapRunning: false,
+                postEventAccessGranted: false,
+                didRequestThisProcess: false
+            )
+        )
+        XCTAssertFalse(
+            LaunchPostEventRecoveryPolicy.shouldRequest(
+                accessibilityTrusted: true,
+                eventTapRunning: true,
+                postEventAccessGranted: true,
+                didRequestThisProcess: false
+            )
+        )
+        XCTAssertFalse(
+            LaunchPostEventRecoveryPolicy.shouldRequest(
+                accessibilityTrusted: true,
+                eventTapRunning: true,
+                postEventAccessGranted: false,
+                didRequestThisProcess: true
+            )
+        )
+    }
+
     // MARK: - Toggle hotkey recovery (AX late / restart / wake)
 
     func testToggleHotkeyRecoveryRegistersWhenPreviouslyFailed() {

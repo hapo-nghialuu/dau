@@ -4,6 +4,20 @@
 import Combine
 import Foundation
 
+/// Decides whether launch may make the one explicit post-event permission request.
+/// Kept pure so the Finder-launch regression stays unit-testable without TCC.
+enum LaunchPostEventRecoveryPolicy {
+    static func shouldRequest(
+        accessibilityTrusted: Bool,
+        eventTapRunning: Bool,
+        postEventAccessGranted: Bool,
+        didRequestThisProcess: Bool
+    ) -> Bool {
+        accessibilityTrusted && eventTapRunning && !postEventAccessGranted &&
+            !didRequestThisProcess
+    }
+}
+
 /// Global engine method as stored in UI (maps to `DauMethod` / `EngineMethodOverride`).
 enum AppEngineMethod: String, Codable, CaseIterable, Sendable, Equatable {
     case telex
