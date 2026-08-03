@@ -9,7 +9,11 @@ CGEventTap + Swift menu-bar app over the shared `dau-core` C ABI.
 | macOS 13+ | Deployment target hiện tại |
 | Xcode 15+ | `xcodebuild`, macOS SDK |
 | Rust / cargo | Build `libdau_core.a` |
+| Rust targets (universal build) | `rustup target add aarch64-apple-darwin x86_64-apple-darwin` |
+| `lipo` | Trong Xcode CLT; cần để `lipo -create` (core) và `lipo -info` (verify app) |
 | Accessibility (TCC) | User grant khi chạy — **không** tự cấp bằng script |
+
+Bản build release là **universal** (arm64 + x86_64) theo mặc định — cùng một artifact chạy được trên Apple Silicon lẫn Intel. Chi tiết: `docs/release-macos.md`.
 
 Worktree ví dụ:
 
@@ -116,8 +120,11 @@ xcodebuild test \
 
 ```bash
 ./scripts/build/macos.sh --adhoc    # Release-ish ad-hoc sign (xem script)
+./scripts/build/macos.sh --adhoc --arch universal   # bản release chuẩn: arm64 + x86_64
 ./scripts/build/macos.sh --help     # full flags
 ```
+
+`--arch` nhận `host` (mặc định) | `arm64` | `x86_64` | `universal`. Bản **universal** cần `rustup target add aarch64-apple-darwin x86_64-apple-darwin` và `lipo`; helper fail rõ ràng nếu thiếu. `scripts/release.sh` luôn dùng `--arch universal` theo mặc định và tự verify app bằng `lipo -info` trước khi đóng gói.
 
 Public **Developer ID + notarize** = P4 — cần cert; không bắt buộc smoke local.
 
