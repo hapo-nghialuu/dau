@@ -91,6 +91,8 @@ final class ToggleHotkeyRegistrar {
 
     fileprivate var modifierTapPort: CFMachPort?
     private var modifierRunLoopSource: CFRunLoopSource?
+    private var globalModifierMonitor: Any?
+    private var localModifierMonitor: Any?
 
     deinit {
         unregister()
@@ -162,22 +164,51 @@ final class ToggleHotkeyRegistrar {
     func handleModifierTapEvent(type: CGEventType, event: CGEvent) {
         guard modifierOnlyHotkey != nil else { return }
         if type == .keyDown {
-            if modifierChordArmed || lastModifierMatch {
-                modifierChordCancelled = true
-            }
+            handleModifierKeyDown()
             return
         }
         guard type == .flagsChanged else { return }
         handleFlagsEvent(event)
     }
 
+    private func handleModifierKeyDown() {
+        if modifierChordArmed || lastModifierMatch {
+            modifierChordCancelled = true
+        }
+    }
+
+    private func handleModifierMonitorEvent(_ event: NSEvent) {
+        guard modifierOnlyHotkey != nil else { return }
+        if event.type == .keyDown {
+            handleModifierKeyDown()
+        } else if event.type == .flagsChanged {
+            let flags = event.modifierFlags
+            handleModifierFlags(
+                command: flags.contains(.command),
+                control: flags.contains(.control),
+                option: flags.contains(.option),
+                shift: flags.contains(.shift)
+            )
+        }
+    }
+
     private func handleFlagsEvent(_ event: CGEvent) {
-        guard let target = modifierOnlyHotkey else { return }
         let flags = event.flags
-        let command = flags.contains(.maskCommand)
-        let control = flags.contains(.maskControl)
-        let option = flags.contains(.maskAlternate)
-        let shift = flags.contains(.maskShift)
+        handleModifierFlags(
+            command: flags.contains(.maskCommand),
+            control: flags.contains(.maskControl),
+            option: flags.contains(.maskAlternate),
+            shift: flags.contains(.maskShift)
+        )
+    }
+
+    private func handleModifierFlags(
+        command: Bool,
+        control: Bool,
+        option: Bool,
+        shift: Bool
+    ) {
+        guard let target = modifierOnlyHotkey else { return }
         let matches = target.matchesModifiers(
             command: command,
             control: control,
@@ -239,7 +270,7 @@ final class ToggleHotkeyRegistrar {
         }
     }
 
-    // MARK: - Modifier-only (flagsChanged tap)
+    // MARK: - Modifier-only (global/local event monitors)
 
     private func registerModifierOnly(_ hotkey: ToggleHotkey) {
         lastRegisterKind = "modifierOnly"
@@ -257,41 +288,24 @@ final class ToggleHotkeyRegistrar {
         lastModifierMatch = false
         modifierChordArmed = false
         modifierChordCancelled = false
-        let pointer = Unmanaged.passUnretained(self).toOpaque()
-        let mask = CGEventMask(1) << CGEventType.flagsChanged.rawValue
-            | CGEventMask(1) << CGEventType.keyDown.rawValue
-            | CGEventMask(1) << CGEventType.tapDisabledByTimeout.rawValue
-            | CGEventMask(1) << CGEventType.tapDisabledByUserInput.rawValue
-
-        let locations: [CGEventTapLocation] = [.cgSessionEventTap, .cghidEventTap]
-        var created: CFMachPort?
-        for location in locations {
-            if let port = CGEvent.tapCreate(
-                tap: location,
-                place: .headInsertEventTap,
-                options: .listenOnly,
-                eventsOfInterest: mask,
-                callback: dauModifierChordTapCallback,
-                userInfo: pointer
-            ) {
-                created = port
-                break
-            }
+        let eventMask: NSEvent.EventTypeMask = [.flagsChanged, .keyDown]
+        localModifierMonitor = NSEvent.addLocalMonitorForEvents(matching: eventMask) {
+            [weak self] event in
+            self?.handleModifierMonitorEvent(event)
+            return event
         }
-        guard let port = created else {
+        globalModifierMonitor = NSEvent.addGlobalMonitorForEvents(matching: eventMask) {
+            [weak self] event in
+            self?.handleModifierMonitorEvent(event)
+        }
+        guard globalModifierMonitor != nil else {
+            stopModifierMonitors()
             modifierOnlyHotkey = nil
-            markRegistrationFailed(kind: "modifierOnly", detail: "tapCreate nil")
+            markRegistrationFailed(kind: "modifierOnly", detail: "global monitor unavailable")
             return
         }
-        modifierTapPort = port
-        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0)
-        modifierRunLoopSource = source
-        if let source {
-            CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-        }
-        CGEvent.tapEnable(tap: port, enable: true)
         markRegistrationSucceeded(kind: "modifierOnly")
-        fputs("[dau] modifier-only hotkey registered \(hotkey.displayString)\n", stderr)
+        fputs("[dau] modifier-only hotkey registered globally \(hotkey.displayString)\n", stderr)
     }
 
     private func applyForcedRegistrationResult(_ forced: Bool, kind: String) {
@@ -326,6 +340,18 @@ final class ToggleHotkeyRegistrar {
             CGEvent.tapEnable(tap: port, enable: false)
             CFMachPortInvalidate(port)
             modifierTapPort = nil
+        }
+        stopModifierMonitors()
+    }
+
+    private func stopModifierMonitors() {
+        if let monitor = globalModifierMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalModifierMonitor = nil
+        }
+        if let monitor = localModifierMonitor {
+            NSEvent.removeMonitor(monitor)
+            localModifierMonitor = nil
         }
     }
 
