@@ -7,7 +7,7 @@ cask "dau" do
   desc "Vietnamese input method (Telex & VNI) for macOS, offline and private"
   homepage "https://github.com/hapo-nghialuu/dau"
 
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   livecheck do
     url :homepage
