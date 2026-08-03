@@ -16,11 +16,19 @@ cask "dau" do
 
   app "Dau.app"
 
-  # Ad-hoc signed, no notarization: gatekeeper will prompt/block; see
-  # docs/release-macos.md for how to open after first download.
+  # Ad-hoc signed, not notarized. postflight strips the Gatekeeper quarantine
+  # flag so a Homebrew install can open without Right-click → Open. This does
+  # NOT grant Accessibility / Input Monitoring, which users must still enable
+  # manually in System Settings (docs/release-macos.md).
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args: ["-dr", "com.apple.quarantine", "#{staged_path}/Dau.app"]
+  end
+
   caveats <<~EOS
-    This build is ad-hoc signed and not notarized. On first open, right-click
-    Dau.app in Finder → Open (or xattr -dr com.apple.quarantine) to allow it.
-    Grant Accessibility + Input Monitoring in System Settings → Privacy & Security.
+    This build is ad-hoc signed and not notarized. Gatekeeper quarantine is
+    cleared automatically by the cask postflight; if the app still won't open,
+    right-click Dau.app in Finder → Open. Grant Accessibility + Input Monitoring
+    in System Settings → Privacy & Security.
   EOS
 end

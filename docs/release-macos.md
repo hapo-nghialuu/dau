@@ -121,18 +121,25 @@ brew tap hapo-nghialuu/tap
 brew install --cask dau
 ```
 
+Cask gồm một `postflight` xoá cờ quarantine Gatekeeper (`xattr -dr com.apple.quarantine` trên `Dau.app`) ngay sau khi cài, nên app mở được ngay **không cần** Right-click → Open.
+
+> ⚠️ **Phân biệt `postflight` với `brew trust`:** `brew trust --cask` là khái niệm **tin tưởng tap** của Homebrew, không liên quan Gatekeeper — nó không loại bỏ quarantine. Ngược lại, `postflight` bên trên xoá cờ **quarantine macOS** — và **không** đồng nghĩa với việc app được **notarize** hay được cấp **Accessibility / Input Monitoring**. Người dùng vẫn phải tự cấp hai quyền đó trong *System Settings → Privacy & Security*.
+
 ## Ad-hoc & chưa notarize
 
 - Bản build dùng `--adhoc`: ký bằng `-` (ad-hoc), **không** Developer ID, **không** notarize.
-- macOS Gatekeeper sẽ chặn/ hỏi khi mở. Mở lần đầu:
+- **Cài qua Homebrew:** cask `postflight` chạy `xattr -dr com.apple.quarantine` trên `Dau.app`, xoá cờ quarantine macOS ngay khi cài xong → mở được ngay, **không bị** Gatekeeper chặn, cũng không cần Right-click → Open.
+- **Cài bằng tay** (tải zip + unzip không qua cask): app còn dính cờ quarantine, có thể bị Gatekeeper chặn. Mở lần đầu:
 
 ```bash
-open "$(brew --caskroom)/dau"/$(ls "$(brew --caskroom)/dau")/Dau.app
+open Dau.app
 # hoặc: click chuột phải → Open
 # hoặc bỏ quarantine: xattr -dr com.apple.quarantine <path Dau.app>
 ```
 
 - Notarization (P4) sẽ cần `--sign` + `notarytool` — xem `scripts/build/macos.sh` (`--sign`, `--notarize`) và `platforms/macos/README.md`.
+
+> **Lưu ý:** xoá quarantine (dù qua `postflight` hay `xattr` thủ công) **không** làm app trở thành đã notarize và **không** cấp **Accessibility / Input Monitoring** — hai quyền đó phải do người dùng bật thủ công (mục dưới).
 
 ## Quyền macOS (bắt buộc khi chạy)
 
