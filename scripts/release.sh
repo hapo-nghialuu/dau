@@ -162,7 +162,7 @@ checksum() {
 
 publish() {
   local gh_tag="v$VERSION"
-  info "Publishing release $gh_tag (manual push/tag expected upstream)."
+  info "Publishing release $gh_tag via GitHub CLI."
   run gh release create "$gh_tag" "$ZIP_PATH" "$ZIP_PATH.sha256" \
     --repo "$RELEASE_REPO" \
     --title "Dấu $gh_tag" \
