@@ -247,6 +247,19 @@ final class AppLifecycleTests: XCTestCase {
         )
     }
 
+    func testLaunchPermissionRecoveryRequestsAccessibilityOnlyWhenUntrusted() {
+        XCTAssertTrue(
+            LaunchPermissionRecoveryPolicy.shouldRequestAccessibility(
+                accessibilityTrusted: false
+            )
+        )
+        XCTAssertFalse(
+            LaunchPermissionRecoveryPolicy.shouldRequestAccessibility(
+                accessibilityTrusted: true
+            )
+        )
+    }
+
     // MARK: - Toggle hotkey recovery (AX late / restart / wake)
 
     func testToggleHotkeyRecoveryRegistersWhenPreviouslyFailed() {

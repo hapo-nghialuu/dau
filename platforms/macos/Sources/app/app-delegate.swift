@@ -159,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !state.accessibilityTrusted || !state.eventTapRunning || !state.postEventAccessGranted {
             onboarding.show()
         }
-        requestPostEventAccessAtLaunchIfNeeded()
+        requestLaunchPermissionRecoveryIfNeeded()
 
         // SET-06: mirror real login-item status; keep UI in sync with SMAppService.
         refreshLaunchAtLoginState()
@@ -167,6 +167,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         checkForUpdates()
 
         fputs("[dau] app launched \(state.versionLabel) (TypingSession hot path, TG-00 fail-open)\n", stderr)
+    }
+
+    /// Finder/LaunchServices may lose either TCC capability after an ad-hoc update.
+    /// Recover Accessibility first, then request post-event access once the tap exists.
+    private func requestLaunchPermissionRecoveryIfNeeded() {
+        guard !LaunchPermissionRecoveryPolicy.shouldRequestAccessibility(
+            accessibilityTrusted: state.accessibilityTrusted
+        ) else {
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      LaunchPermissionRecoveryPolicy.shouldRequestAccessibility(
+                          accessibilityTrusted: self.state.accessibilityTrusted
+                      ) else { return }
+                fputs("[dau] launch permission recovery: requesting Accessibility\n", stderr)
+                self.attemptStartTap(prompt: true)
+            }
+            return
+        }
+        requestPostEventAccessAtLaunchIfNeeded()
     }
 
     /// Finder/LaunchServices does not inherit Terminal's post-event TCC context.
@@ -262,11 +281,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if prompt {
             _ = KeyboardEventTap.isAccessibilityTrusted(prompt: true)
             state.accessibilityTrusted = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
-            // Post-event access prompt only from setup/recovery UI — never keyboard callback.
-            refreshPostEventAccess(prompt: true)
-        } else {
-            refreshPostEventAccess(prompt: false)
         }
+        // Post-event access is requested only after Accessibility is trusted;
+        // otherwise a failed AX prompt would consume the one launch recovery attempt.
+        refreshPostEventAccess(prompt: prompt && state.accessibilityTrusted)
 
         if state.accessibilityTrusted {
             let ok = eventTap.start(promptForAccessibility: false)
@@ -287,6 +305,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         syncUI()
         onboarding.refreshStatus()
+
+        if !prompt && state.accessibilityTrusted && state.eventTapRunning {
+            requestPostEventAccessAtLaunchIfNeeded()
+        }
     }
 
     private func restartTap() {

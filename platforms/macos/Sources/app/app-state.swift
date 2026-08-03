@@ -18,6 +18,12 @@ enum LaunchPostEventRecoveryPolicy {
     }
 }
 
+enum LaunchPermissionRecoveryPolicy {
+    static func shouldRequestAccessibility(accessibilityTrusted: Bool) -> Bool {
+        !accessibilityTrusted
+    }
+}
+
 /// Global engine method as stored in UI (maps to `DauMethod` / `EngineMethodOverride`).
 enum AppEngineMethod: String, Codable, CaseIterable, Sendable, Equatable {
     case telex
