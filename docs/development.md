@@ -1,7 +1,7 @@
 # Phát triển Dấu
 
 Tài liệu cho người đóng góp: kiến trúc, build/test, quy ước, cấu trúc thư mục.  
-Phiên bản sản phẩm: **0.1.0** · License: **MIT** · Repo: https://github.com/hapo-nghialuu/dau
+Phiên bản sản phẩm: **0.1.1** · License: **MIT** · Repo: https://github.com/hapo-nghialuu/dau
 
 ## Kiến trúc
 
@@ -43,7 +43,7 @@ Logic gõ tách khỏi Fcitx5 để unit test bằng C++ (`ctest`) và Rust (`ca
 
 ```
 dau/
-├── core/                 # Rust: dau-core 0.1.0
+├── core/                 # Rust: dau-core 0.1.1
 │   ├── src/              # engine, ffi, config
 │   ├── include/dau_core.h
 │   └── Cargo.toml
@@ -179,7 +179,7 @@ Gợi ý scope: `core`, `linux`, `macos`, `ffi`, `docs`, `scripts`, `ci`.
 |--------|---------|
 | Tên hiển thị | Dấu |
 | ID | `dau` |
-| Version | `0.1.0` |
+| Version | `0.1.1` |
 | License | MIT |
 | Repo | https://github.com/hapo-nghialuu/dau |
 

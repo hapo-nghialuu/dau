@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-EXPECTED_VERSION="0.1.0"
+EXPECTED_VERSION="0.1.1"
 EXPECTED_NAME="Dấu"
 EXPECTED_LICENSE="MIT"
 EXPECTED_REPO="https://github.com/hapo-nghialuu/dau"
