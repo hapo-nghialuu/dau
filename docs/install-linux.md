@@ -1,6 +1,6 @@
 # Cài đặt Dấu trên Linux
 
-Hướng dẫn cài **Dấu** 0.1.1 (Fcitx5) từ mã nguồn.
+Hướng dẫn cài **Dấu** 0.1.2 (Fcitx5) từ mã nguồn.
 
 ## Yêu cầu
 
