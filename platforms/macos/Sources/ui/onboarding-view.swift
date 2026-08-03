@@ -52,7 +52,7 @@ final class OnboardingController: NSObject {
         }
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 360),
+            contentRect: NSRect(origin: .zero, size: Self.contentSize(for: currentPhase())),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -60,7 +60,9 @@ final class OnboardingController: NSObject {
         panel.title = "Dấu — Thiết lập"
         panel.isReleasedWhenClosed = false
         panel.level = .floating
-        panel.minSize = NSSize(width: 420, height: 320)
+        // Width must stay fixed; min height follows the most compact phase so short
+        // phases never get clamped into blank space below the stack.
+        panel.minSize = NSSize(width: 420, height: Self.contentSize(for: .needsPermission).height)
 
         let root = buildContentView()
         panel.contentView = root
@@ -104,10 +106,27 @@ final class OnboardingController: NSObject {
         }
     }
 
+    // MARK: - Layout size
+
+    /// Phase-aware content size. Shorter phases (e.g. `needsPermission`) get a
+    /// compact window instead of a tall one with blank space at the bottom.
+    static func contentSize(for phase: Phase) -> NSSize {
+        switch phase {
+        case .needsPermission:
+            return NSSize(width: 460, height: 300)
+        case .ready:
+            return NSSize(width: 460, height: 280)
+        case .needsPostEventPermission, .setupFailed:
+            return NSSize(width: 460, height: 380)
+        }
+    }
+
     // MARK: - Layout
 
     private func buildContentView() -> NSView {
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 360))
+        // Root frame is a placeholder; the window is then set to the phase size
+        // and the root autoresizes (width/height) to match.
+        let root = NSView(frame: NSRect(origin: .zero, size: NSSize(width: 460, height: 360)))
         root.autoresizingMask = [.width, .height]
 
         let logo = NSImageView()
@@ -178,11 +197,18 @@ final class OnboardingController: NSObject {
         body.preferredMaxLayoutWidth = maxLabelWidth
         status.preferredMaxLayoutWidth = maxLabelWidth
 
+        let bottomFit = stack.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+        // Prefer fitting the stack flush to the root, but never let it extend past it.
+        bottomFit.priority = NSLayoutConstraint.Priority(700)
+        let bottomCap = stack.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor)
+        bottomCap.priority = NSLayoutConstraint.Priority(999)
+
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             stack.topAnchor.constraint(equalTo: root.topAnchor),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor),
+            bottomFit,
+            bottomCap,
 
             logo.widthAnchor.constraint(equalToConstant: 64),
             logo.heightAnchor.constraint(equalToConstant: 64),
@@ -193,6 +219,23 @@ final class OnboardingController: NSObject {
         ])
 
         return root
+    }
+
+    /// Resize the window to the phase's content size, keeping the top edge fixed.
+    /// Called whenever phase content changes so short phases don't leave blank space.
+    private func sizeToPhase(_ phase: Phase) {
+        guard let window else { return }
+        let target = Self.contentSize(for: phase)
+        let oldFrame = window.frame
+        let newHeight = target.height
+        // Keep the top-left corner in place while growing/shrinking from the bottom.
+        let newFrame = NSRect(
+            x: oldFrame.origin.x,
+            y: oldFrame.origin.y + (oldFrame.height - newHeight),
+            width: oldFrame.width,
+            height: newHeight
+        )
+        window.setFrame(newFrame, display: true, animate: window.isVisible)
     }
 
     private enum LabelStyle {
@@ -229,6 +272,7 @@ final class OnboardingController: NSObject {
 
     private func applyPhase(_ phase: Phase) {
         guard titleLabel != nil else { return }
+        sizeToPhase(phase)
 
         switch phase {
         case .needsPermission:
