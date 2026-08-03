@@ -207,6 +207,14 @@ final class SettingsViewModel: ObservableObject {
     var onToggleHotkeyChanged: (() -> Void)?
     /// Pause/resume Carbon global hotkey while recording.
     var onToggleHotkeyRecordingChanged: ((Bool) -> Void)?
+    /// Toggle the login item (SET-06) — AppDelegate wires SMAppService.
+    var onSetLaunchAtLogin: ((Bool) -> Bool)?
+    /// Refresh real login-item status from SMAppService.
+    var onRefreshLaunchAtLoginState: (() -> Void)?
+    /// Open System Settings → Login Items (for `.requiresApproval`).
+    var onOpenLoginItemsSettings: (() -> Void)?
+    /// Manual update check (UPDATE-01).
+    var onCheckForUpdates: (() -> Void)?
 
     init(
         appState: AppState,
@@ -344,6 +352,22 @@ final class SettingsController: NSObject, NSWindowDelegate {
     var onToggleHotkeyRecordingChanged: ((Bool) -> Void)? {
         get { model.onToggleHotkeyRecordingChanged }
         set { model.onToggleHotkeyRecordingChanged = newValue }
+    }
+    var onSetLaunchAtLogin: ((Bool) -> Bool)? {
+        get { model.onSetLaunchAtLogin }
+        set { model.onSetLaunchAtLogin = newValue }
+    }
+    var onRefreshLaunchAtLoginState: (() -> Void)? {
+        get { model.onRefreshLaunchAtLoginState }
+        set { model.onRefreshLaunchAtLoginState = newValue }
+    }
+    var onOpenLoginItemsSettings: (() -> Void)? {
+        get { model.onOpenLoginItemsSettings }
+        set { model.onOpenLoginItemsSettings = newValue }
+    }
+    var onCheckForUpdates: (() -> Void)? {
+        get { model.onCheckForUpdates }
+        set { model.onCheckForUpdates = newValue }
     }
 
     init(
@@ -635,10 +659,88 @@ struct SettingsGeneralPage: View {
                     .padding(.vertical, 10)
                 }
                 .buttonStyle(.plain)
+
+                Divider().padding(.leading, 12)
+
+                // SET-06: real login item via SMAppService; status mirrors the system.
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Mở khi đăng nhập")
+                            .font(.system(size: 13))
+                        Text(loginItemStatusText)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    Spacer()
+                    if case .requiresApproval = state.launchAtLoginState {
+                        Button("Mở Login Items…") {
+                            model.onRefreshLaunchAtLoginState?()
+                            model.onOpenLoginItemsSettings?()
+                        }
+                        .controlSize(.small)
+                    }
+                    Toggle("", isOn: Binding(
+                        get: { state.launchAtLoginState.isEnabled },
+                        set: { newValue in
+                            if let ok = model.onSetLaunchAtLogin?(newValue) {
+                                // Mirror already applied by AppDelegate; ensure UI refresh.
+                                model.onRefreshLaunchAtLoginState?()
+                            }
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(Color(nsColor: .dauBrandOrange))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+
+            settingsCard(title: "Cập nhật") {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Kiểm tra bản cập nhật")
+                            .font(.system(size: 13))
+                        Text(updateStatusText)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    Spacer()
+                    Button("Kiểm tra…") {
+                        model.onCheckForUpdates?()
+                    }
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
             }
         }
         .onDisappear {
             stopHotkeyRecording()
+        }
+        .onAppear {
+            model.onRefreshLaunchAtLoginState?()
+        }
+    }
+
+    /// Login item status label from the real mirrored state.
+    private var loginItemStatusText: String {
+        if case .error(let message) = state.launchAtLoginState {
+            return message
+        }
+        return state.launchAtLoginStatusLabel
+    }
+
+    /// Update status label (compact; silent on failure).
+    private var updateStatusText: String {
+        switch state.releaseCheckState {
+        case .none: return "Chưa kiểm tra — bấm để xem có bản mới"
+        case .checking: return "Đang kiểm tra…"
+        case .upToDate: return "Đã có bản mới nhất"
+        case .updateAvailable(let version): return "Có bản mới \(version) trên GitHub"
+        case .failed: return "Không kết nối được — thử lại sau"
         }
     }
 

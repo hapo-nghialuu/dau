@@ -51,6 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// delays EventTap servicing + `dau.typing` scheduling past the 12ms budget,
     /// so the first burst after minutes of idle passes through raw.
     private var keyboardLatencyActivity: NSObjectProtocol?
+    /// Update checker (UPDATE-01). Background queue only — never the keyboard hot path.
+    private let updateChecker = UpdateChecker()
 
     // MARK: - NSApplicationDelegate
 
@@ -157,6 +159,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !state.accessibilityTrusted || !state.eventTapRunning || !state.postEventAccessGranted {
             onboarding.show()
         }
+
+        // SET-06: mirror real login-item status; keep UI in sync with SMAppService.
+        refreshLaunchAtLoginState()
+        // UPDATE-01: throttled background update check (24h). Never blocks launch.
+        checkForUpdates()
 
         fputs("[dau] app launched \(state.versionLabel) (TypingSession hot path, TG-00 fail-open)\n", stderr)
     }
@@ -523,6 +530,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuBar.onQuit = {
             NSApp.terminate(nil)
         }
+        menuBar.onCheckForUpdates = { [weak self] in
+            self?.checkForUpdatesNow()
+        }
+        menuBar.onOpenLatestRelease = { [weak self] in
+            self?.openLatestReleasePage()
+        }
+        menuBar.onOpenUpdateGuide = { [weak self] in
+            self?.openHomebrewUpdateGuide()
+        }
     }
 
     private func wireOnboarding() {
@@ -589,6 +605,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.setActivationPolicy(.accessory)
             self.syncUI()
         }
+        settings.onSetLaunchAtLogin = { [weak self] enabled in
+            self?.setLaunchAtLogin(enabled) ?? false
+        }
+        settings.onRefreshLaunchAtLoginState = { [weak self] in
+            self?.refreshLaunchAtLoginState()
+        }
+        settings.onOpenLoginItemsSettings = { [weak self] in
+            self?.openLoginItemsSettings()
+        }
+        settings.onCheckForUpdates = { [weak self] in
+            self?.checkForUpdatesNow()
+        }
     }
 
     private func toggleTyping() {
@@ -596,6 +624,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         typingSession.resetCompose()
         refreshProfileCache()
         syncUI()
+    }
+
+    // MARK: - Launch at login (SET-06)
+
+    /// Mirror the real `SMAppService` status into AppState. Call at launch and
+    /// after every toggle. Never guesses from `launchAtLoginDesired`.
+    func refreshLaunchAtLoginState() {
+        state.applyLaunchAtLoginState(LaunchAtLogin.currentState)
+    }
+
+    /// Toggle the login item. Mirrors real status/error into AppState.
+    /// - Returns: `true` when the requested state is now active (or requires user approval).
+    @discardableResult
+    func setLaunchAtLogin(_ enabled: Bool) -> Bool {
+        state.launchAtLoginDesired = enabled
+        switch LaunchAtLogin.setEnabled(enabled) {
+        case .success(let mirrored):
+            state.applyLaunchAtLoginState(mirrored)
+            return true
+        case .failure(let error):
+            // Keep the toggle visible but reflect the failure (e.g. not signed in).
+            state.applyLaunchAtLoginState(.error(error.localizedDescription))
+            return false
+        }
+    }
+
+    func openLoginItemsSettings() {
+        LaunchAtLogin.openLoginItemsSettings()
+    }
+
+    // MARK: - Update check (UPDATE-01)
+
+    /// Background check (24h throttle) then mirror into AppState + menu.
+    /// Flips to `.checking` first so the menu shows progress; the completion
+    /// always lands on a terminal state (`.none` on throttle skip).
+    func checkForUpdates() {
+        state.releaseCheckState = .checking
+        syncUI()
+        updateChecker.checkIfNeeded { [weak self] result in
+            DispatchQueue.main.async {
+                self?.applyUpdateResult(result)
+            }
+        }
+    }
+
+    /// Manual check (menu action) — bypasses throttle.
+    func checkForUpdatesNow() {
+        state.releaseCheckState = .checking
+        syncUI()
+        updateChecker.checkNow { [weak self] result in
+            DispatchQueue.main.async {
+                self?.applyUpdateResult(result)
+            }
+        }
+    }
+
+    private func applyUpdateResult(_ result: ReleaseCheckResult) {
+        state.releaseCheckState = result.state
+        state.releaseInfo = result.release
+        syncUI()
+    }
+
+    func openLatestReleasePage() {
+        updateChecker.openLatestReleasePage()
+    }
+
+    func openHomebrewUpdateGuide() {
+        updateChecker.openHomebrewGuide()
     }
 
     /// Force rebind (settings change / launch). Always tears down then installs.

@@ -79,6 +79,30 @@ Script không tự `git push`; lệnh `gh release create vVERSION` sẽ tạo ho
 
 > `--skip-build` dùng lại app đã build sẵn (chỉ đóng gói + publish).
 
+## Cập nhật trong app (update checker)
+
+App macOS tự kiểm tra bản mới qua GitHub Releases (`https://api.github.com/repos/hapo-nghialuu/dau/releases/latest`).
+
+### Hành vi thực tế
+
+- **Không bao giờ tự tải / thay thế app.** Chỉ mirror trạng thái vào menu bar + Settings:
+  - Menu bar: row nhỏ "Có bản mới `<tag>` — xem trên GitHub" (ẩn khi không có bản mới / lỗi) + mục "Kiểm tra bản cập nhật…".
+  - Settings → Cập nhật: nút "Kiểm tra…" + trạng thái.
+- **So sánh semver** giữa `tag_name` và `CFBundleShortVersionString` (bundle version, ví dụ `0.1.0`). Chỉ hiện update khi `tag_name > version` hiện tại.
+- **Throttle 24h** cho check tự động lúc launch (lưu mốc `dau.update.lastCheckedAt` trong `UserDefaults`); nút "Kiểm tra…" luôn check ngay.
+- **Lỗi mạng / JSON hỏng → im lặng** (state `.failed`, không popup, không log nội dung).
+- Hành động "xem trên GitHub" mở trang Release; còn hướng dẫn cập nhật Homebrew mở `docs/release-macos.md` trên GitHub. Không có key-path / UI blocking.
+
+### Contract với pipeline release
+
+`scripts/release.sh` tạo tag `v<semver>` (prefix `v` bắt buộc). Update checker parse tag qua `SemanticVersionParser` (bỏ prefix `v`, chấp nhận `X`, `X.Y`, `X.Y.Z`). Muốn checker nhận bản mới:
+
+1. Bump `MARKETING_VERSION` trong `platforms/macos/Dau.xcodeproj/project.pbxproj` đúng semver (hiện `0.1.0`).
+2. Release với `scripts/release.sh VERSION` (tạo `vVERSION` + zip + sha + upload GitHub Release).
+3. Release không cần `draft`/`prerelease` — endpoint `/releases/latest` chỉ trả release mới nhất không phải draft.
+
+Nếu tag không có prefix `v` hoặc không phải semver, checker bỏ qua (coi như không có bản mới).
+
 ## Homebrew cask
 
 ### Bản nháp trong repo này

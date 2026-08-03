@@ -68,6 +68,9 @@
 		DAU000010000000000000A0 /* keyboard-event-tap.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000061 /* keyboard-event-tap.swift */; };
 		DAU000010000000000000A1 /* keyboard-event-tap-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU000020000000000000A1 /* keyboard-event-tap-tests.swift */; };
 		DAU000010000000000000A2 /* app-lifecycle-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU000020000000000000A2 /* app-lifecycle-tests.swift */; };
+		DAU000010000000000000B0 /* update-checker.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU000020000000000000B0 /* update-checker.swift */; };
+		DAU000010000000000000B1 /* update-checker.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU000020000000000000B0 /* update-checker.swift */; };
+		DAU000010000000000000B2 /* update-checker-tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU000020000000000000B2 /* update-checker-tests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -127,6 +130,8 @@
 		DAU00002000000000000099 /* toggle-hotkey-registrar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "toggle-hotkey-registrar.swift"; sourceTree = "<group>"; };
 		DAU000020000000000000A1 /* keyboard-event-tap-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "keyboard-event-tap-tests.swift"; sourceTree = "<group>"; };
 		DAU000020000000000000A2 /* app-lifecycle-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "app-lifecycle-tests.swift"; sourceTree = "<group>"; };
+		DAU000020000000000000B0 /* update-checker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "update-checker.swift"; sourceTree = "<group>"; };
+		DAU000020000000000000B2 /* update-checker-tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "update-checker-tests.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -228,6 +233,7 @@
 				DAU00002000000000000098 /* toggle-hotkey-tests.swift */,
 				DAU000020000000000000A1 /* keyboard-event-tap-tests.swift */,
 				DAU000020000000000000A2 /* app-lifecycle-tests.swift */,
+				DAU000020000000000000B2 /* update-checker-tests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -273,6 +279,7 @@
 				DAU00002000000000000094 /* launch-at-login.swift */,
 				DAU00002000000000000096 /* toggle-hotkey.swift */,
 				DAU00002000000000000099 /* toggle-hotkey-registrar.swift */,
+				DAU000020000000000000B0 /* update-checker.swift */,
 			);
 			path = config;
 			sourceTree = "<group>";
@@ -411,6 +418,7 @@
 				DAU00001000000000000096 /* toggle-hotkey.swift in Sources */,
 				DAU00001000000000000099 /* toggle-hotkey-registrar.swift in Sources */,
 				DAU00001000000000000090 /* typing-session.swift in Sources */,
+				DAU000010000000000000B0 /* update-checker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -448,6 +456,8 @@
 				DAU000010000000000000A0 /* keyboard-event-tap.swift in Sources */,
 				DAU000010000000000000A1 /* keyboard-event-tap-tests.swift in Sources */,
 				DAU000010000000000000A2 /* app-lifecycle-tests.swift in Sources */,
+				DAU000010000000000000B1 /* update-checker.swift in Sources */,
+				DAU000010000000000000B2 /* update-checker-tests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

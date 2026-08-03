@@ -100,6 +100,57 @@ final class AppState: ObservableObject {
         didSet { persistBool(launchAtLoginDesired, key: DauSettingsKey.launchAtLoginDesired) }
     }
 
+    /// Real login-item status mirrored from `SMAppService` (not a UserDefaults flag).
+    /// AppDelegate refreshes this at launch and after every toggle.
+    @Published var launchAtLoginState: LaunchAtLoginState = .disabled
+
+    /// Update-check state (UPDATE-01). Mirrored by AppDelegate; never blocks typing path.
+    @Published var releaseCheckState: ReleaseCheckState = .none
+    /// Latest release info when an update is available (for menu actions).
+    @Published var releaseInfo: DauReleaseInfo?
+
+    /// True when a newer release is known.
+    var updateAvailable: Bool {
+        if case .updateAvailable = releaseCheckState { return true }
+        return false
+    }
+
+    /// Menu notice for the compact update row.
+    var updateNotice: String? {
+        switch releaseCheckState {
+        case .updateAvailable(let version): return "Có bản mới \(version) — xem trên GitHub"
+        case .upToDate: return "Đã có bản mới nhất"
+        case .checking: return "Đang kiểm tra bản cập nhật…"
+        case .none, .failed: return nil
+        }
+    }
+
+    /// Human-readable status label for the Settings System card.
+    var launchAtLoginStatusLabel: String {
+        switch launchAtLoginState {
+        case .error(let message): return message
+        default: return LaunchAtLoginStatusMapper.label(
+            kind: Self.kind(for: launchAtLoginState)
+        )
+        }
+    }
+
+    /// Apply the real login-item status from AppDelegate (main thread).
+    func applyLaunchAtLoginState(_ state: LaunchAtLoginState) {
+        launchAtLoginState = state
+    }
+
+    /// Pure `LaunchAtLoginState` → kind (for label; `.error` handled by caller).
+    private static func kind(for state: LaunchAtLoginState) -> LaunchAtLoginKind {
+        switch state {
+        case .disabled: return .notRegistered
+        case .enabled: return .enabled
+        case .notFound: return .notFound
+        case .requiresApproval: return .requiresApproval
+        case .error: return .unknown
+        }
+    }
+
     /// Global VI/EN toggle hotkey (Carbon RegisterEventHotKey; default ⇧⌘E).
     @Published var toggleHotkey: ToggleHotkey {
         didSet { persistToggleHotkey(toggleHotkey) }

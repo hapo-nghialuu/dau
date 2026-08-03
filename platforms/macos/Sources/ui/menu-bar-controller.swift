@@ -21,6 +21,12 @@ final class MenuBarController: NSObject {
     /// Optional first-run guide (kept for recovery; not the main Cài đặt entry).
     var onShowOnboarding: (() -> Void)?
     var onQuit: (() -> Void)?
+    /// Manual update check (UPDATE-01).
+    var onCheckForUpdates: (() -> Void)?
+    /// Open latest release on GitHub.
+    var onOpenLatestRelease: (() -> Void)?
+    /// Open Homebrew update guide.
+    var onOpenUpdateGuide: (() -> Void)?
 
     private var stateObserver: NSObjectProtocol?
 
@@ -196,6 +202,38 @@ final class MenuBarController: NSObject {
 
         menu.addItem(.separator())
 
+        // UPDATE-01: compact update row + manual check. Only when a newer
+        // release is known (silent otherwise — no noise on failure).
+        if state.updateAvailable {
+            let update = NSMenuItem(
+                title: state.updateNotice ?? "Có bản mới",
+                action: #selector(handleOpenLatestRelease),
+                keyEquivalent: ""
+            )
+            update.target = self
+            menu.addItem(update)
+
+            // Homebrew guide (UPDATE-01) shown beside the GitHub release row.
+            let guide = NSMenuItem(
+                title: "Cập nhật qua Homebrew",
+                action: #selector(handleOpenUpdateGuide),
+                keyEquivalent: ""
+            )
+            guide.target = self
+            menu.addItem(guide)
+
+            menu.addItem(.separator())
+        }
+        let check = NSMenuItem(
+            title: "Kiểm tra bản cập nhật…",
+            action: #selector(handleCheckForUpdates),
+            keyEquivalent: ""
+        )
+        check.target = self
+        menu.addItem(check)
+
+        menu.addItem(.separator())
+
         let about = NSMenuItem(
             title: "Giới thiệu",
             action: #selector(handleAbout),
@@ -203,8 +241,6 @@ final class MenuBarController: NSObject {
         )
         about.target = self
         menu.addItem(about)
-
-        // YAGNI: no update checker. Greyed placeholder kept out of menu.
 
         let quit = NSMenuItem(
             title: "Thoát Dấu",
@@ -231,8 +267,7 @@ final class MenuBarController: NSObject {
         if let onShowAbout {
             onShowAbout()
             return
-        }
-        // Fallback: standard About panel.
+        }        // Fallback: standard About panel.
         var options: [NSApplication.AboutPanelOptionKey: Any] = [:]
         options[.applicationName] = "Dấu"
         if let marketing = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
@@ -254,6 +289,9 @@ final class MenuBarController: NSObject {
     }
 
     @objc private func handleQuit() { onQuit?() }
+    @objc private func handleCheckForUpdates() { onCheckForUpdates?() }
+    @objc private func handleOpenLatestRelease() { onOpenLatestRelease?() }
+    @objc private func handleOpenUpdateGuide() { onOpenUpdateGuide?() }
 }
 
 // MARK: - Header view (logo + title + method + switch)
