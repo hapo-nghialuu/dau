@@ -8,8 +8,8 @@ cask "dau" do
   homepage "https://github.com/hapo-nghialuu/dau"
 
   livecheck do
-    url :url
-    strategy :github_latest
+    url :homepage
+    strategy :github_latest_release
   end
 
   app "Dau.app"
