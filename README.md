@@ -51,6 +51,7 @@ Chi tiết: **[docs/install-linux.md](docs/install-linux.md)**.
 | [Cài đặt Linux](docs/install-linux.md) | Yêu cầu, build, kích hoạt Fcitx5, gỡ cài, troubleshoot |
 | [Phát triển](docs/development.md) | Kiến trúc, build/test, quy ước commit, cấu trúc repo |
 | [Neo dự án](docs/project-anchor.md) | Tầm nhìn & quyết định kiến trúc cấp cao |
+| [Release macOS](docs/release-macos.md) | Build local, dry-run, release, Homebrew cask, quyền macOS |
 
 ## Kiến trúc (tóm tắt)
 

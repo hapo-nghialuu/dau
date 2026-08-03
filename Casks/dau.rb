@@ -1,0 +1,24 @@
+cask "dau" do
+  version "0.1.0"
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+
+  url "https://github.com/hapo-nghialuu/dau/releases/download/v#{version}/Dau-#{version}.zip"
+  name "Dấu"
+  desc "Vietnamese input method (Telex & VNI) for macOS, offline and private"
+  homepage "https://github.com/hapo-nghialuu/dau"
+
+  livecheck do
+    url :url
+    strategy :github_latest
+  end
+
+  app "Dau.app"
+
+  # Ad-hoc signed, no notarization: gatekeeper will prompt/block; see
+  # docs/release-macos.md for how to open after first download.
+  caveats <<~EOS
+    This build is ad-hoc signed and not notarized. On first open, right-click
+    Dau.app in Finder → Open (or xattr -dr com.apple.quarantine) to allow it.
+    Grant Accessibility + Input Monitoring in System Settings → Privacy & Security.
+  EOS
+end
