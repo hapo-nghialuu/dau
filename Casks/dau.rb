@@ -1,5 +1,5 @@
 cask "dau" do
-  version "0.1.9"
+  version "0.1.10"
   sha256 "58d9ef3552fd8db116a4ecfbd79aa85b03d6beda21a83c0df3377613ef539c5f"
 
   url "https://github.com/hapo-nghialuu/dau/releases/download/v#{version}/Dau-#{version}.zip"
