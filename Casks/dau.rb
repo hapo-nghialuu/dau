@@ -1,6 +1,6 @@
 cask "dau" do
-  version "0.1.6"
-  sha256 "97edd853288ecb604115e04ebb626c417644b15ab519de7d64a761087a64e48d"
+  version "0.1.7"
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
 
   url "https://github.com/hapo-nghialuu/dau/releases/download/v#{version}/Dau-#{version}.zip"
   name "Dấu"
@@ -23,12 +23,21 @@ cask "dau" do
   postflight do
     system_command "/usr/bin/xattr",
                    args: ["-dr", "com.apple.quarantine", "#{staged_path}/Dau.app"]
+    # Auto-restart after install/upgrade so the new binary's event-tap is used.
+    # The old process holds the previous ad-hoc code signature; without restart typing fails.
+    system_command "/bin/sh",
+                   args: ["-c", "killall Dau 2>/dev/null; sleep 0.5; open -a Dau 2>/dev/null || open \"#{staged_path}/Dau.app\" 2>/dev/null || true"]
   end
 
   caveats <<~EOS
     This build is ad-hoc signed and not notarized. Gatekeeper quarantine is
     cleared automatically by the cask postflight; if the app still won't open,
-    right-click Dau.app in Finder → Open. Grant Accessibility + Input Monitoring
-    in System Settings → Privacy & Security.
+    right-click Dau.app in Finder → Open.
+
+    After install/upgrade the app is automatically restarted so the new binary's
+    event-tap is used. Because ad-hoc signatures change each build, macOS may
+    require re-enabling Accessibility for the new binary:
+      System Settings → Privacy & Security → Accessibility → toggle Dau off/on.
+    If typing still fails, run: killall Dau && open -a Dau
   EOS
 end

@@ -40,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updateChecker = UpdateChecker()
     private var pendingRestart: DispatchWorkItem?
     private var onboardingObserver: NSObjectProtocol?
+    private var hasRelaunchedForBundleChange = false
+    private lazy var bundleWatcher = BundleWatcher { [weak self] in self?.handleBundleChange() }
 
     // MARK: - NSApplicationDelegate
 
@@ -53,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         warmUpEventPostChannel()
+        bundleWatcher.start()
 
         typingSession.onInjectCompleted = { result in
             if case .failure = result {
@@ -179,6 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        bundleWatcher.stop()
         cancelPendingRestart()
         if let keyboardLatencyActivity {
             ProcessInfo.processInfo.endActivity(keyboardLatencyActivity)
@@ -200,6 +204,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.close()
         typingSession.resetCompose()
         syncEventTapStateToUI()
+    }
+
+    private func handleBundleChange() {
+        guard !hasRelaunchedForBundleChange else { return }
+        let fm = FileManager.default
+        let onDiskPath = "/Applications/Dau.app/Contents/MacOS/Dau"
+        // When running from /Applications, onDiskPath == executablePath, but the file content may have changed (new ad-hoc hash).
+        // Detect change via version string or file mtime.
+        let runningVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        var onDiskVersion: String?
+        if let dict = NSDictionary(contentsOfFile: "/Applications/Dau.app/Contents/Info.plist") as? [String: Any] {
+            onDiskVersion = dict["CFBundleShortVersionString"] as? String
+        }
+        var shouldRelaunch = false
+        if let od = onDiskVersion, od != runningVersion {
+            shouldRelaunch = true
+        } else {
+            // Fallback: check mtime (ad-hoc same version but different binary)
+            if let attrs = try? fm.attributesOfItem(atPath: onDiskPath),
+               let mtime = attrs[.modificationDate] as? Date {
+                // If on-disk binary was modified after app launch (allow 5s grace), relaunch.
+                if mtime.timeIntervalSinceNow > -5 {
+                    shouldRelaunch = true
+                } else if let runningAttrs = try? fm.attributesOfItem(atPath: Bundle.main.executablePath ?? ""),
+                          let rtime = runningAttrs[.modificationDate] as? Date,
+                          mtime > rtime {
+                    shouldRelaunch = true
+                }
+            } else if fm.fileExists(atPath: onDiskPath) {
+                // If we can't get mtime but file exists and watcher fired, assume changed.
+                shouldRelaunch = true
+            }
+        }
+        guard shouldRelaunch else { return }
+        hasRelaunchedForBundleChange = true
+        fputs("[dau] bundle watcher: on-disk binary changed (running=\(runningVersion) onDisk=\(onDiskVersion ?? "unknown")) → relaunch\n", stderr)
+        let path = Bundle.main.bundlePath
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 0.5; /usr/bin/open \"$1\"", "_", path]
+        try? task.run()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            NSApp.terminate(nil)
+        }
     }
 
     // MARK: - Profile / engine → TypingSession

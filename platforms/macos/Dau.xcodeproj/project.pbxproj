@@ -45,6 +45,7 @@
 
 		DAU00001000000000000080 /* dau-app.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000080 /* dau-app.swift */; };
 		DAU00001000000000000081 /* app-delegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000081 /* app-delegate.swift */; };
+		DAU00001000000000000103 /* bundle-watcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000103 /* bundle-watcher.swift */; };
 		DAU00001000000000000082 /* app-state.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000082 /* app-state.swift */; };
 		DAU00001000000000000083 /* menu-bar-controller.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000083 /* menu-bar-controller.swift */; };
 		DAU00001000000000000084 /* onboarding-view.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAU00002000000000000084 /* onboarding-view.swift */; };
@@ -113,6 +114,7 @@
 		DAU0000200000000000007C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DAU00002000000000000080 /* dau-app.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "dau-app.swift"; sourceTree = "<group>"; };
 		DAU00002000000000000081 /* app-delegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "app-delegate.swift"; sourceTree = "<group>"; };
+		DAU00002000000000000103 /* bundle-watcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "bundle-watcher.swift"; sourceTree = "<group>"; };
 		DAU00002000000000000082 /* app-state.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "app-state.swift"; sourceTree = "<group>"; };
 		DAU00002000000000000083 /* menu-bar-controller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "menu-bar-controller.swift"; sourceTree = "<group>"; };
 		DAU00002000000000000084 /* onboarding-view.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "onboarding-view.swift"; sourceTree = "<group>"; };
@@ -196,6 +198,7 @@
 			children = (
 				DAU00002000000000000080 /* dau-app.swift */,
 				DAU00002000000000000081 /* app-delegate.swift */,
+				DAU00002000000000000103 /* bundle-watcher.swift */,
 				DAU00002000000000000082 /* app-state.swift */,
 			);
 			path = app;
@@ -399,6 +402,7 @@
 			files = (
 				DAU00001000000000000080 /* dau-app.swift in Sources */,
 				DAU00001000000000000081 /* app-delegate.swift in Sources */,
+				DAU00001000000000000103 /* bundle-watcher.swift in Sources */,
 				DAU00001000000000000082 /* app-state.swift in Sources */,
 				DAU00001000000000000010 /* dau-core-bridge.swift in Sources */,
 				DAU00001000000000000011 /* dau-result-mapper.swift in Sources */,
@@ -636,7 +640,7 @@
 					"$(PROJECT_DIR)/build/lib",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.1.6;
+				MARKETING_VERSION = 0.1.7;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
@@ -690,7 +694,7 @@
 					"$(PROJECT_DIR)/build/lib",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.1.6;
+				MARKETING_VERSION = 0.1.7;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
@@ -738,7 +742,7 @@
 					"$(PROJECT_DIR)/build/lib",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.1.6;
+				MARKETING_VERSION = 0.1.7;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
@@ -786,7 +790,7 @@
 					"$(PROJECT_DIR)/build/lib",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.1.6;
+				MARKETING_VERSION = 0.1.7;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",

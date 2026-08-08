@@ -104,6 +104,7 @@ struct OnboardingView: View {
     @ObservedObject var appState: AppState
     @State private var step = 0
     @State private var hasPermission = false
+    @State private var hasAutoRestarted = false
     @State private var selectedMode: AppEngineMethod = .telex
 
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -133,6 +134,20 @@ struct OnboardingView: View {
         .onReceive(timer) { _ in
             hasPermission = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
             if step == 1, hasPermission { step = 2 }
+        }
+        .onChange(of: step) { newStep in
+            // Auto-restart when reaching Ready (step 2) after granting permission — GoNhanh parity without manual click.
+            if newStep == 2, !hasAutoRestarted {
+                hasAutoRestarted = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                    if step == 2 {
+                        restart()
+                    }
+                }
+            }
+            if newStep != 2 {
+                hasAutoRestarted = false
+            }
         }
     }
 
@@ -197,7 +212,7 @@ struct OnboardingView: View {
         let path = Bundle.main.bundlePath
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        task.arguments = ["-c", "sleep 0.5; /usr/bin/open \"$1\" --", "_", path]
+        task.arguments = ["-c", "sleep 0.5; /usr/bin/open \"$1\"", "_", path]
         try? task.run()
         NSApp.terminate(nil)
     }
