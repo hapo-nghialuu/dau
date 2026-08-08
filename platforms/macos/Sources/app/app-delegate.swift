@@ -42,6 +42,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingObserver: NSObjectProtocol?
     private var hasRelaunchedForBundleChange = false
     private lazy var bundleWatcher = BundleWatcher { [weak self] in self?.handleBundleChange() }
+    /// True once startEngine() has wired keyHandler + observers. Guards against recovery paths
+    /// (requestLaunchPermissionRecoveryIfNeeded, pollAccessibility) starting the tap without
+    /// wiring the keyHandler — which would leave the tap running but processing nothing.
+    private var engineStarted = false
 
     // MARK: - NSApplicationDelegate
 
@@ -104,7 +108,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Wire engine + tap + observers — mirrors GoNhanh MenuBar.startEngine.
+    /// Idempotent: safe to call from recovery paths; no-ops if already started.
     private func startEngine() {
+        guard !engineStarted else { return }
+        engineStarted = true
         applyEngineFlags()
         refreshProfileCache()
 
@@ -172,12 +179,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             // Only attempt recovery when onboarding already completed — otherwise onboarding handles it.
             guard self.state.hasCompletedOnboarding else { return }
+            // Engine already started at launch (both conditions were true) — nothing to recover.
+            guard !self.engineStarted else { return }
             guard LaunchPermissionRecoveryPolicy.shouldRequestAccessibility(
                 accessibilityTrusted: self.state.accessibilityTrusted
             ) else { return }
-            fputs("[dau] launch permission recovery: requesting Accessibility\n", stderr)
-            // No AX prompt — only open System Settings via onboarding/menu (GoNhanh parity).
-            self.attemptStartTap(prompt: false)
+            fputs("[dau] launch permission recovery: AX untrusted at launch, will start engine when trust is granted\n", stderr)
+            // Do not call attemptStartTap directly — it starts the tap without wiring keyHandler.
+            // Instead, the AX poll timer (startAXPolling below) will detect when trust is granted
+            // and call startEngine() via pollAccessibility(). Start polling now.
+            self.startAXPolling()
         }
     }
 
@@ -221,19 +232,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let od = onDiskVersion, od != runningVersion {
             shouldRelaunch = true
         } else {
-            // Fallback: check mtime (ad-hoc same version but different binary)
-            if let attrs = try? fm.attributesOfItem(atPath: onDiskPath),
-               let mtime = attrs[.modificationDate] as? Date {
-                // If on-disk binary was modified after app launch (allow 5s grace), relaunch.
+            // Fallback: detect same-version ad-hoc binary change.
+            let executablePath = Bundle.main.executablePath ?? ""
+            let samePath = onDiskPath == executablePath
+            if samePath {
+                // Running from /Applications: onDiskPath == executablePath, so mtime comparison
+                // always returns equal (same inode after atomic rename). Trust the DispatchSource
+                // event — it only fires on write/extend/attrib/rename/delete, i.e. a real change.
+                shouldRelaunch = true
+            } else if let attrs = try? fm.attributesOfItem(atPath: onDiskPath),
+                      let mtime = attrs[.modificationDate] as? Date {
+                // Running from a different path (e.g. build/Release): compare mtimes.
                 if mtime.timeIntervalSinceNow > -5 {
                     shouldRelaunch = true
-                } else if let runningAttrs = try? fm.attributesOfItem(atPath: Bundle.main.executablePath ?? ""),
+                } else if let runningAttrs = try? fm.attributesOfItem(atPath: executablePath),
                           let rtime = runningAttrs[.modificationDate] as? Date,
                           mtime > rtime {
                     shouldRelaunch = true
                 }
             } else if fm.fileExists(atPath: onDiskPath) {
-                // If we can't get mtime but file exists and watcher fired, assume changed.
                 shouldRelaunch = true
             }
         }
@@ -406,7 +423,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             syncEventTapStateToUI()
         }
         if decision.attemptStartTap {
-            attemptStartTap(prompt: false)
+            if !engineStarted {
+                // Engine not yet wired — startEngine() handles wiring + tap start.
+                // Happens when onboarding completed but AX was untrusted at launch.
+                fputs("[dau] launch permission recovery: AX trust granted, starting engine\n", stderr)
+                startEngine()
+            } else {
+                attemptStartTap(prompt: false)
+            }
         }
         if decision.refreshUI {
             syncUI()

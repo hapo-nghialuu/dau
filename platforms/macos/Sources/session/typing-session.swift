@@ -80,6 +80,10 @@ final class TypingSession {
     private var liveGeneration: UInt64 = 0
     /// Monotonic inject batch id (metadata only).
     private var nextBatchId: UInt64 = 1
+    /// True while performBoundedWork is executing on the session queue (map + inject).
+    /// Checked on the EventTap callback thread: if true, fail-open immediately instead of
+    /// burning the full 100 ms budget waiting for the queue to drain.
+    private var queueWorkInProgress: Bool = false
 
     /// Injection method for inject (profile layer sets this; queue-owned). Always delivery-safe.
     private var injectionMethod: InjectionMethod = .backspaceFast
@@ -142,6 +146,17 @@ final class TypingSession {
             return .passthrough
         default:
             break
+        }
+
+        // Queue-busy fast fail-open: if the session queue is currently executing map+inject
+        // for a previous key, fail-open immediately rather than burning the full budget waiting.
+        // The previous key's inject will still complete; only this key's compose is dropped.
+        if isQueueWorkInProgress() {
+            scheduleComposeResetAsync()
+            let gen = currentGeneration()
+            emitTelemetry(phase: "queue-busy", generation: gen, nanoseconds: 0, timedOut: false)
+            fputs("[dau] typing fail-open: queue busy gen=\(gen)\n", stderr)
+            return .passthrough
         }
 
         let generation = beginGeneration()
@@ -353,9 +368,24 @@ final class TypingSession {
         return typingEnabledCached
     }
 
+    /// Hot-path read: true while performBoundedWork is executing on the session queue.
+    func isQueueWorkInProgress() -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return queueWorkInProgress
+    }
+
+    private func setQueueWorkInProgress(_ value: Bool) {
+        stateLock.lock()
+        queueWorkInProgress = value
+        stateLock.unlock()
+    }
+
     // MARK: - Bounded work (session queue)
 
     private func performBoundedWork(key: ClassifiedKey, generation: UInt64, box: DecisionBox) {
+        setQueueWorkInProgress(true)
+        defer { setQueueWorkInProgress(false) }
         guard isGenerationLive(generation) else {
             pipeline.resetCompose()
             return
