@@ -226,7 +226,6 @@ struct OnboardingView: View {
             }
         }
     }
-    }
 
     private func restart() {
         // Persist chosen method + permission flag before relaunch (mirrors GoNhanh).
