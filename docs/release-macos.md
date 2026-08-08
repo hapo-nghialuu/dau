@@ -142,6 +142,13 @@ Khi cài qua Homebrew trên Intel:
 ```bash
 brew tap hapo-nghialuu/tap
 brew install --cask dau
+
+> **⚠️ Lưu ý quan trọng:** Sau khi install hoặc upgrade version mới, **phải restart app** để event tap được khởi tạo lại:
+> ```bash
+> killall Dau
+> open -a Dau
+> ```
+> Nếu không restart, app sẽ chạy nhưng không gõ được tiếng Việt. Chi tiết xem [Troubleshooting](troubleshooting-macos.md).
 ```
 
 > Homebrew trên Intel Mac chạy Rosetta, cài app Intel/x86_64 bình thường. Nếu hệ thống 32-bit hoặc macOS quá cũ so với deployment target (hiện macOS 13+), app sẽ không chạy — đó là giới hạn deployment target, không phải lỗi cài đặt.
@@ -195,6 +202,13 @@ Sau khi đã tap (`brew tap hapo-nghialuu/tap`), dùng lệnh ngắn:
 ```bash
 brew tap hapo-nghialuu/tap
 brew install --cask dau
+
+> **⚠️ Lưu ý quan trọng:** Sau khi install hoặc upgrade version mới, **phải restart app** để event tap được khởi tạo lại:
+> ```bash
+> killall Dau
+> open -a Dau
+> ```
+> Nếu không restart, app sẽ chạy nhưng không gõ được tiếng Việt. Chi tiết xem [Troubleshooting](troubleshooting-macos.md).
 ```
 
 Cask gồm một `postflight` xoá cờ quarantine Gatekeeper (`xattr -dr com.apple.quarantine` trên `Dau.app`) ngay sau khi cài, nên app mở được ngay **không cần** Right-click → Open.
