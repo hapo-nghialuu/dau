@@ -42,6 +42,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingObserver: NSObjectProtocol?
     private var hasRelaunchedForBundleChange = false
     private lazy var bundleWatcher = BundleWatcher { [weak self] in self?.handleBundleChange() }
+    /// Mtime of the running executable captured at launch — used by handleBundleChange to
+    /// distinguish real binary replacements (mtime advances) from xattr/quarantine events
+    /// (mtime unchanged) when running from /Applications (same-path case).
+    private var executableMtimeAtLaunch: Date? = {
+        let path = Bundle.main.executablePath ?? ""
+        return (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+    }()
     /// True once startEngine() has wired keyHandler + observers. Guards against recovery paths
     /// (requestLaunchPermissionRecoveryIfNeeded, pollAccessibility) starting the tap without
     /// wiring the keyHandler — which would leave the tap running but processing nothing.
@@ -237,9 +244,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let samePath = onDiskPath == executablePath
             if samePath {
                 // Running from /Applications: onDiskPath == executablePath, so mtime comparison
-                // always returns equal (same inode after atomic rename). Trust the DispatchSource
-                // event — it only fires on write/extend/attrib/rename/delete, i.e. a real change.
-                shouldRelaunch = true
+                // at evaluation time always returns equal (same inode). Instead compare against
+                // the mtime captured at launch — only relaunch if binary mtime advanced since
+                // we started (real write). xattr/quarantine events fire .attrib but don't change
+                // mtime, so they no longer trigger spurious relaunches.
+                if let launchMtime = executableMtimeAtLaunch,
+                   let attrs = try? fm.attributesOfItem(atPath: onDiskPath),
+                   let currentMtime = attrs[.modificationDate] as? Date,
+                   currentMtime > launchMtime {
+                    shouldRelaunch = true
+                }
             } else if let attrs = try? fm.attributesOfItem(atPath: onDiskPath),
                       let mtime = attrs[.modificationDate] as? Date {
                 // Running from a different path (e.g. build/Release): compare mtimes.
