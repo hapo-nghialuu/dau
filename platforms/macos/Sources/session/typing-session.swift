@@ -55,11 +55,11 @@ enum TypingCallbackDurationBucket: String, Equatable, Sendable {
 ///
 /// Hot-path contract (TG-00 / TG-05):
 /// 1. EN / typing-off / pure boundary keys return passthrough **before** `dau.typing`,
-///    `SyntheticPostAccess`, AX, or injector.
+///    AX, or injector.
 /// 2. VI map (+ inject when consume requires it) runs on the session queue with a **bounded wait**.
 /// 3. On timeout: pass original, invalidate generation — no late inject / stale mutation.
 /// 4. Never call `usleep` on the EventTap callback thread itself (delays run on session queue).
-/// 5. Fail-open: if post access denied or inject fails, do **not** consume the original key.
+/// 5. Fail-open: if injection fails, do **not** consume the original key.
 /// 6. TG-05: **never** consume original then queue destructive replacement async with no recovery.
 ///    Destructive inject (consumeOriginal) always completes on the session queue before return;
 ///    only non-destructive inject (pass original + wipe) may run async after return.
@@ -127,7 +127,7 @@ final class TypingSession {
     /// Bounded wait for consume/pass. Prefer system keyboard availability over compose fidelity.
     @discardableResult
     func handleKey(_ key: ClassifiedKey) -> TypingSessionDecision {
-        // ── Early fail-open (no queue / SyntheticPostAccess / AX / injector) ──
+        // ── Early fail-open (no queue / AX / injector) ──
         if !isTypingEnabledCached() {
             scheduleComposeResetAsync()
             emitTelemetry(phase: "early-en-off", generation: currentGeneration(), nanoseconds: 0, timedOut: false)
@@ -356,16 +356,6 @@ final class TypingSession {
     // MARK: - Bounded work (session queue)
 
     private func performBoundedWork(key: ClassifiedKey, generation: UInt64, box: DecisionBox) {
-        // Post-access from cached snapshot only (never CGRequest on this path).
-        if !SyntheticPostAccess.isGranted {
-            if pipeline.provisionalLength > 0 {
-                pipeline.resetCompose()
-            }
-            box.decision = .passthrough
-            fputs("[dau] typing fail-open: post access denied (pass original)\n", stderr)
-            return
-        }
-
         guard isGenerationLive(generation) else {
             pipeline.resetCompose()
             return

@@ -145,24 +145,18 @@ Chạy foreground (log stderr `[dau] …`):
 platforms/macos/build/Debug/Dau.app/Contents/MacOS/Dau
 ```
 
-### 2. Accessibility + quyền gửi sự kiện (bắt buộc)
+### 2. Accessibility (bắt buộc)
 
-Hai cổng TCC **riêng** (macOS 10.15+):
+Dấu chỉ cần Accessibility để tạo event tap và nhận phím (macOS 10.15+):
 
 | API | Ý nghĩa |
 |-----|---------|
 | `AXIsProcessTrusted` | Trợ năng — bắt phím / event tap |
-| `CGPreflightPostEventAccess` / `CGRequestPostEventAccess` | Gửi/tổng hợp sự kiện — inject chữ thay thế |
 
-Triệu chứng thường gặp khi chỉ có AX: menu **“Accessibility: đã cấp · thiếu quyền gửi sự kiện…”**, onboarding **“Cần thêm quyền để gõ”**, badge **EN** (đúng — app chưa gõ được).
+Việc thay thế chữ dùng kết quả của event sink thật. Nếu macOS hoặc ứng dụng đích từ chối một lần inject, Dấu fail-open: không giữ phím, xóa compose và để phím gốc đi qua.
 
 1. System Settings → **Privacy & Security** → **Accessibility** → bật **Dau** (hoặc **Dấu**).
-2. Trong onboarding bấm **Cấp quyền…** để gọi `CGRequestPostEventAccess` (có thể hiện hộp thoại).
-3. Nếu **vẫn** thiếu post-event (nút không còn hiện dialog):
-   - Thoát Dấu hoàn toàn.
-   - Accessibility → **xóa** Dấu khỏi danh sách → **thêm lại** binary đang chạy → bật.
-   - Mở lại app → **Thử lại quyền…** / **Mở Cài đặt hệ thống…**.
-4. **Mỗi lần rebuild ad-hoc / đổi path / đổi chữ ký**, TCC có thể coi binary là app khác — thường phải lặp bước 3. (Giả thuyết identity ad-hoc: **plausible** khi dev; không phải mọi máy đều tái hiện giống nhau.)
+2. **Mỗi lần rebuild ad-hoc / đổi path / đổi chữ ký**, TCC có thể coi binary là app khác — hãy xóa bản cũ khỏi Accessibility, thêm đúng app đang chạy và bật lại.
 
 Script **không** ghi TCC database.
 
@@ -187,7 +181,7 @@ Script **không** ghi TCC database.
 | **Cmd/Ctrl/Option+Delete** + navigation | Boundary app-level: reset compose + forward shortcut/key |
 | **EN / passthrough** | Fail-open: không kẹt callback; original key đi qua |
 | **Menu VI/EN + tap status** | Phản ánh **trạng thái tap thật** (`eventTapRunning` / degraded/stopped), không báo “đang chạy” khi tap đã fail |
-| **Badge "VI"** | Chỉ hiện khi **thật sự gõ được**: AX trusted **và** tap running **và** *quyền post-event đã cấp* **và** không bị input-source block **và** VI đang bật. Thiếu post-event → badge **EN** / `.setup` (không nói dối là đang gõ). Ý định VI/EN (toggle / ⌘⇧) vẫn hiện trong **tooltip**, **a11y label**, **subtitle menu** (`ý định VI` / `ý định EN`) và công tắc header. Onboarding: mỗi lần bấm CTA có thể gọi lại `CGRequestPostEventAccess`; sau lần 1 vẫn deny thì copy hướng dẫn xóa/thêm lại Accessibility |
+| **Badge "VI"** | Chỉ hiện khi AX trusted **và** tap running **và** không bị input-source block **và** VI đang bật. Khi sink inject lỗi, Dấu fail-open và không giữ phím gốc. Ý định VI/EN (toggle / ⌘⇧) vẫn hiện trong **tooltip**, **a11y label**, **subtitle menu** (`ý định VI` / `ý định EN`) và công tắc header |
 
 ### TG-00 fail-open (code đã land; live soak **chưa** chạy)
 
@@ -302,7 +296,7 @@ Hai đường đăng ký khác nhau, không thể gộp:
 | Phím + modifier (`⇧⌘E`) | Carbon `RegisterEventHotKey` | Carbon không đăng ký được chord chỉ-modifier |
 | Chỉ modifier (`⌘⇧`) | `CGEventTap` `.listenOnly` trên `flagsChanged` | Cần Accessibility để tạo tap |
 
-Đăng ký được **thử lại** ở các đường phục hồi (`attemptStartTap` khi tap lên, `restartTap`, sau wake) khi lần trước thất bại — cấp Accessibility muộn không còn làm phím tắt chết vĩnh viễn. Retry chỉ chạy khi chưa đăng ký thành công, không tear-down tap đang chạy tốt.
+Đăng ký được **thử lại** ở các đường phục hồi (`attemptStartTap` khi tap lên, `restartTap`, sau wake) khi lần trước thất bại — cấp Accessibility muộn không còn làm phím tắt chết vĩnh viễn. Retry chỉ chạy khi chưa đăng ký thành công, không tear-down tap đang chạy tốt. Dấu dùng Accessibility cho event tap và inject; không yêu cầu Input Monitoring riêng như một cổng bắt buộc.
 
 Menu header + tooltip hiển thị tổ hợp hiện tại. `NSMenuItem` toggle **cố ý** để `keyEquivalent: ""` — tránh double-toggle với đường global ở trên.
 

@@ -22,91 +22,6 @@ enum SyntheticEventMarker {
     }
 }
 
-// MARK: - Post-event access (dead-key preflight)
-
-/// Gate for synthetic keyboard posts. When false, TypingSession must not consume originals.
-///
-/// TG-00: hot path reads a **cached** capability snapshot only.
-/// `CGRequestPostEventAccess()` is allowed from setup/recovery UI via `refreshFromSystem(prompt:)`,
-/// never from the keyboard EventTap callback.
-enum SyntheticPostAccess {
-    /// Hot-path check. Default reads `cachedGranted` only — never prompts, never preflights OS.
-    /// Overridable in unit tests (including a blocking latch to prove EN bypass).
-    static var check: () -> Bool = { cachedGranted }
-
-    private static let lock = NSLock()
-    /// Cached OS post-event capability. Refresh off the keyboard hot path.
-    private static var _cachedGranted = false
-    /// True after at least one UI-initiated `CGRequestPostEventAccess` this process.
-    /// Used for onboarding copy only — does **not** block further UI re-prompts.
-    private static var _didRequestThisProcess = false
-
-    static var isGranted: Bool { check() }
-
-    /// Thread-safe snapshot used by default `check`.
-    static var cachedGranted: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return _cachedGranted
-    }
-
-    /// Whether setup UI has already asked the OS for post-event access this process.
-    static var didRequestThisProcess: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return _didRequestThisProcess
-    }
-
-    /// Test / lifecycle hook to set the snapshot without touching OS APIs.
-    static func setCachedGranted(_ value: Bool) {
-        lock.lock()
-        _cachedGranted = value
-        lock.unlock()
-    }
-
-    /// Refresh cache from the OS.
-    /// - Parameter prompt: when true, may call `CGRequestPostEventAccess()` (setup/recovery UI only).
-    ///   Each explicit UI click may request again; hot path / poll always uses `prompt: false`.
-    static func refreshFromSystem(prompt: Bool = false) {
-        if #available(macOS 10.15, *) {
-            if CGPreflightPostEventAccess() {
-                setCachedGranted(true)
-                return
-            }
-            if prompt {
-                lock.lock()
-                _didRequestThisProcess = true
-                lock.unlock()
-                // Explicit UI recovery may re-request. OS may still not re-show a dialog
-                // after a prior denial — onboarding must guide the user to System Settings.
-                fputs("[dau] post-event access denied; requesting (UI)\n", stderr)
-                _ = CGRequestPostEventAccess()
-                let granted = CGPreflightPostEventAccess()
-                setCachedGranted(granted)
-                if granted {
-                    fputs("[dau] post-event access granted after request\n", stderr)
-                } else {
-                    fputs("[dau] post-event access denied after request\n", stderr)
-                }
-            } else {
-                setCachedGranted(false)
-                fputs("[dau] post-event access denied (cached, no prompt)\n", stderr)
-            }
-        } else {
-            // Pre-10.15: no separate post-access API; Accessibility trust is the practical gate.
-            setCachedGranted(true)
-        }
-    }
-
-    static func resetToDefault() {
-        lock.lock()
-        _didRequestThisProcess = false
-        _cachedGranted = false
-        lock.unlock()
-        check = { cachedGranted }
-    }
-}
-
 // MARK: - Command plan
 
 /// Ordered injector steps. Unit tests assert plan shape without posting real keys.
@@ -124,8 +39,6 @@ enum InjectionError: Error, Equatable, Sendable {
     case invalidBackspaceCount
     case unsupportedMethod(InjectionMethod)
     case sinkFailed(String)
-    /// OS denied synthetic keyboard posts (`CGPreflightPostEventAccess` false).
-    case postAccessDenied
 }
 
 // MARK: - Event sink (testable)
@@ -468,7 +381,7 @@ final class TextInjector {
     }
 
     /// Inject replacement. Safe for concurrent callers (serialized). Never logs `text`.
-    /// Returns `.failure` when post access is denied or a sink post cannot create events.
+    /// Returns `.failure` when a sink post cannot create events.
     /// Mid-batch sink failure aborts remaining commands and returns `.failure` (no false success).
     @discardableResult
     func inject(
@@ -523,13 +436,6 @@ final class TextInjector {
                 onMetadata?("inject axDirect=fallback error=\(err) \(context.metadataFragment)")
                 // Fall through to synthetic plan.
             }
-        }
-
-        // Preflight before any destructive sequence (BS + text). Avoid partial wipe.
-        guard SyntheticPostAccess.isGranted else {
-            onMetadata?("inject postAccess=denied \(context.metadataFragment)")
-            logInjectResult(meta: meta, ok: false, detail: "postAccessDenied")
-            return .failure(.postAccessDenied)
         }
 
         let commands = plan(backspace: backspace, text: text, method: delivery, delays: delays)

@@ -13,8 +13,6 @@ final class TypingSessionTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        // Unit tests never exercise real CGEvent posts; always grant synthetic post access.
-        SyntheticPostAccess.check = { true }
         sink = RecordingEventSink()
         sleeper = RecordingInjectorSleeper()
         bridge = DauCoreBridge(method: DauMethod_Telex)
@@ -39,7 +37,6 @@ final class TypingSessionTests: XCTestCase {
         bridge = nil
         sleeper = nil
         sink = nil
-        SyntheticPostAccess.resetToDefault()
         super.tearDown()
     }
 
@@ -444,17 +441,7 @@ final class TypingSessionTests: XCTestCase {
         XCTAssertEqual(session.currentInjectionMethod(), .backspaceFast)
     }
 
-    // MARK: - Dead-key inject fail-open
-
-    /// Without synthetic post access, VI must not consume — original key must pass (no dead key).
-    func testPostAccessDeniedFailOpenDoesNotConsume() {
-        SyntheticPostAccess.check = { false }
-        let d = handle(printable("a"))
-        XCTAssertFalse(d.consumeOriginal, "must pass original when inject cannot post")
-        XCTAssertFalse(d.injectScheduled)
-        XCTAssertEqual(session.provisionalLength, 0)
-        XCTAssertTrue(sink.commands.isEmpty)
-    }
+    // MARK: - Inject fail-open
 
     /// Zero-delay path: sink failure after map → fail-open (pass original + clear compose).
     /// Uses transform inject (a→â) because plain append no longer schedules inject (TG-02).
@@ -508,16 +495,9 @@ final class TypingSessionTests: XCTestCase {
 
     // MARK: - TG-00 fail-open / budget
 
-    /// EN path must not touch SyntheticPostAccess even when the checker blocks forever.
-    func testENBypassNeverCallsSyntheticPostAccess() {
+    /// English path bypasses the composition and injection pipeline.
+    func testENBypassNeverInjects() {
         session.setTypingEnabled(false)
-        var checkCount = 0
-        let latch = DispatchSemaphore(value: 0)
-        SyntheticPostAccess.check = {
-            checkCount += 1
-            latch.wait() // would hang the callback if EN path touched this
-            return false
-        }
 
         // English "delete " — every key must pass without waiting on access check.
         for ch in "delete" {
@@ -528,12 +508,7 @@ final class TypingSessionTests: XCTestCase {
         }
         let space = session.handleKey(breakSpace())
         XCTAssertFalse(space.consumeOriginal)
-        XCTAssertEqual(checkCount, 0, "EN must not call SyntheticPostAccess.check")
         XCTAssertTrue(sink.commands.isEmpty)
-
-        // Release latch so any stray blocked check cannot hang process teardown.
-        latch.signal()
-        SyntheticPostAccess.check = { true }
     }
 
     /// Session/inject work held by latch: callback returns within budget; no late inject after release.
@@ -639,17 +614,11 @@ final class TypingSessionTests: XCTestCase {
         session.testQueueWorkBegan = nil
     }
 
-    /// Boundary/shortcut path returns pass without SyntheticPostAccess.
-    func testBoundaryEarlyPassSkipsPostAccess() {
-        var checkCount = 0
-        SyntheticPostAccess.check = {
-            checkCount += 1
-            return true
-        }
+    /// Boundary/shortcut path returns pass without touching composition.
+    func testBoundaryEarlyPassSkipsComposition() {
         session.setTypingEnabled(true)
         let d = session.handleKey(otherKey(keyCode: 9)) // Cmd+V-like boundary
         XCTAssertFalse(d.consumeOriginal)
-        XCTAssertEqual(checkCount, 0)
     }
 
     // MARK: - TG-05 delayed inject fail-open + state reset

@@ -10,7 +10,6 @@ final class TextInjectorTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        SyntheticPostAccess.check = { true }
         sink = RecordingEventSink()
         sleeper = RecordingInjectorSleeper()
         injector = TextInjector(sink: sink, sleeper: sleeper, axAccessor: AXTextAccessor())
@@ -20,7 +19,6 @@ final class TextInjectorTests: XCTestCase {
         injector = nil
         sleeper = nil
         sink = nil
-        SyntheticPostAccess.resetToDefault()
         super.tearDown()
     }
 
@@ -502,19 +500,7 @@ final class TextInjectorTests: XCTestCase {
         }
     }
 
-    // MARK: - Dead-key inject guards
-
-    func testInjectFailsWhenPostAccessDenied() {
-        SyntheticPostAccess.check = { false }
-        let result = injector.inject(
-            backspace: 1,
-            text: "a",
-            method: .backspaceFast,
-            delays: .zero
-        )
-        assertFailure(result, .postAccessDenied)
-        XCTAssertTrue(sink.commands.isEmpty, "must not post partial sequence without access")
-    }
+    // MARK: - Inject failure handling
 
     func testInjectPropagatesSinkFailure() {
         sink.shouldSucceed = false

@@ -8,7 +8,7 @@ import Foundation
 /// Application delegate: wires EventTap → profile cache → TypingSession (bounded callback).
 ///
 /// TG-00 contract:
-/// - EN / blocked / off path never waits on `dau.typing` or SyntheticPostAccess.
+/// - EN / blocked / off path never waits on `dau.typing`.
 /// - Sleep/wake stops and recreates the tap; no permission prompt on wake.
 /// - AX poll stops when trusted + tap healthy.
 /// - `state.eventTapRunning` always mirrors real tap status.
@@ -66,8 +66,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             reason: "Dấu keyboard event tap latency"
         )
 
-        // Snapshot first; launch recovery requests post-event access only after UI/tap setup.
-        refreshPostEventAccess(prompt: false)
         warmUpEventPostChannel()
 
         typingSession.onInjectCompleted = { result in
@@ -92,11 +90,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         eventTap.healthCheck = { [weak self] in
-            guard let self else { return false }
-            // Cached capability + AX trust only — never prompt from recovery.
+            guard self != nil else { return false }
+            // AX trust only — never prompt from recovery.
             let ax = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
-            let post = SyntheticPostAccess.cachedGranted
-            return ax && post
+            return ax
         }
         eventTap.onTelemetry = { line in
             fputs("[dau] \(line)\n", stderr)
@@ -117,8 +114,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         focusObserver.onFocusChange = { [weak self] _, _ in
             self?.typingSession.resetCompose()
-            // Refresh post-access cache off the keyboard hot path when focus changes.
-            self?.refreshPostEventAccess(prompt: false)
             self?.refreshProfileCache()
             // App switch is exactly when the first composed word lands on a cold
             // post channel + ramping CPU — pre-pay that before the first keystroke.
@@ -154,9 +149,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startAXPolling()
         attemptStartTap(prompt: false)
 
-        // First-run / recovery: show setup until AX, tap, and post-event access are ready.
+        // First-run / recovery: show setup until AX and tap are ready.
         // Trusted-but-tap-failed must not be treated as success (ONBOARD-03).
-        if !state.accessibilityTrusted || !state.eventTapRunning || !state.postEventAccessGranted {
+        if !state.accessibilityTrusted || !state.eventTapRunning {
             onboarding.show()
         }
         requestLaunchPermissionRecoveryIfNeeded()
@@ -169,47 +164,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fputs("[dau] app launched \(state.versionLabel) (TypingSession hot path, TG-00 fail-open)\n", stderr)
     }
 
-    /// Finder/LaunchServices may lose either TCC capability after an ad-hoc update.
-    /// Recover Accessibility first, then request post-event access once the tap exists.
+    /// Finder/LaunchServices may lose Accessibility trust after an ad-hoc update.
     private func requestLaunchPermissionRecoveryIfNeeded() {
-        guard !LaunchPermissionRecoveryPolicy.shouldRequestAccessibility(
-            accessibilityTrusted: state.accessibilityTrusted
-        ) else {
-            DispatchQueue.main.async { [weak self] in
-                guard let self,
-                      LaunchPermissionRecoveryPolicy.shouldRequestAccessibility(
-                          accessibilityTrusted: self.state.accessibilityTrusted
-                      ) else { return }
-                fputs("[dau] launch permission recovery: requesting Accessibility\n", stderr)
-                self.attemptStartTap(prompt: true)
-            }
-            return
-        }
-        requestPostEventAccessAtLaunchIfNeeded()
-    }
-
-    /// Finder/LaunchServices does not inherit Terminal's post-event TCC context.
-    /// Request once after the setup UI exists; never prompt from keyboard/recovery paths.
-    private func requestPostEventAccessAtLaunchIfNeeded() {
-        guard LaunchPostEventRecoveryPolicy.shouldRequest(
-            accessibilityTrusted: state.accessibilityTrusted,
-            eventTapRunning: state.eventTapRunning,
-            postEventAccessGranted: state.postEventAccessGranted,
-            didRequestThisProcess: SyntheticPostAccess.didRequestThisProcess
-        ) else { return }
-
         DispatchQueue.main.async { [weak self] in
             guard let self,
-                  LaunchPostEventRecoveryPolicy.shouldRequest(
-                      accessibilityTrusted: self.state.accessibilityTrusted,
-                      eventTapRunning: self.state.eventTapRunning,
-                      postEventAccessGranted: self.state.postEventAccessGranted,
-                      didRequestThisProcess: SyntheticPostAccess.didRequestThisProcess
+                  LaunchPermissionRecoveryPolicy.shouldRequestAccessibility(
+                      accessibilityTrusted: self.state.accessibilityTrusted
                   ) else { return }
-            self.refreshPostEventAccess(prompt: true)
-            self.syncEventTapStateToUI()
-            self.syncUI()
-            self.onboarding.refreshStatus()
+            fputs("[dau] launch permission recovery: requesting Accessibility\n", stderr)
+            self.attemptStartTap(prompt: true)
         }
     }
 
@@ -282,10 +245,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = KeyboardEventTap.isAccessibilityTrusted(prompt: true)
             state.accessibilityTrusted = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
         }
-        // Post-event access is requested only after Accessibility is trusted;
-        // otherwise a failed AX prompt would consume the one launch recovery attempt.
-        refreshPostEventAccess(prompt: prompt && state.accessibilityTrusted)
-
         if state.accessibilityTrusted {
             let ok = eventTap.start(promptForAccessibility: false)
             syncEventTapStateToUI(fallbackDetail: ok ? nil : "event tap create failed")
@@ -306,15 +265,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         syncUI()
         onboarding.refreshStatus()
 
-        if !prompt && state.accessibilityTrusted && state.eventTapRunning {
-            requestPostEventAccessAtLaunchIfNeeded()
-        }
     }
 
     private func restartTap() {
         typingSession.resetCompose()
         state.accessibilityTrusted = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
-        refreshPostEventAccess(prompt: false)
         if state.accessibilityTrusted {
             let ok = eventTap.restart(promptForAccessibility: false)
             syncEventTapStateToUI(fallbackDetail: ok ? nil : "event tap restart failed")
@@ -343,9 +298,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return false
         }()
         var detail = fallbackDetail
-        if state.accessibilityTrusted && running && !state.postEventAccessGranted {
-            detail = "need post-event access"
-        }
         if detail == nil {
             switch eventTap.status {
             case .running(let place):
@@ -385,14 +337,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func stopAXPollingIfHealthy() {
         if state.accessibilityTrusted && state.eventTapRunning &&
-            state.postEventAccessGranted && !state.eventTapDegraded {
+            !state.eventTapDegraded {
             stopAXPolling()
         }
     }
 
     private func pollAccessibility() {
         let trusted = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
-        refreshPostEventAccess(prompt: false)
         let decision = AccessibilityPollEngine.evaluate(
             trusted: trusted,
             wasTrusted: state.accessibilityTrusted,
@@ -416,7 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             syncUI()
             onboarding.refreshStatus()
         }
-        if decision.stopPolling && state.postEventAccessGranted {
+        if decision.stopPolling {
             stopAXPolling()
             return
         }
@@ -470,8 +421,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Trust re-check without prompt on every edge.
         let trusted = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
         state.accessibilityTrusted = trusted
-        refreshPostEventAccess(prompt: false)
-
         let decision = sleepWakeEngine.handle(phase, accessibilityTrusted: trusted)
         state.lastLifecycleTransition = decision.transitionLabel
         // Metadata only: phase + bundle id. Never key codes / text / clipboard.
@@ -522,12 +471,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Refresh and mirror post-event capability outside the keyboard callback.
-    private func refreshPostEventAccess(prompt: Bool) {
-        SyntheticPostAccess.refreshFromSystem(prompt: prompt)
-        state.applyPostEventAccessMirror(granted: SyntheticPostAccess.cachedGranted)
-    }
-
     /// Warm the synthetic post path off the hot path (launch / wake / focus change).
     /// Cold costs measured >12ms callback budget on the first composed word:
     /// first `CGEventPost` of the process (~10-14ms WindowServer handshake) and
@@ -535,7 +478,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// build a keyboard event without posting it, then post a marker-tagged null
     /// event (apps ignore null events).
     private func warmUpEventPostChannel() {
-        guard SyntheticPostAccess.cachedGranted else { return }
         DispatchQueue.global(qos: .utility).async {
             guard let source = CGEventSource(stateID: .privateState)
                 ?? CGEventSource(stateID: .combinedSessionState)
@@ -594,7 +536,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.openAccessibilitySettings()
         }
         onboarding.onRequestAccessibilityPrompt = { [weak self] in
-            // Setup UI may prompt for Accessibility + post-event access.
+            // Setup UI may prompt for Accessibility.
             self?.attemptStartTap(prompt: true)
         }
         onboarding.onRetryTap = { [weak self] in

@@ -199,7 +199,7 @@ brew install --cask dau
 
 Cask gồm một `postflight` xoá cờ quarantine Gatekeeper (`xattr -dr com.apple.quarantine` trên `Dau.app`) ngay sau khi cài, nên app mở được ngay **không cần** Right-click → Open.
 
-> ⚠️ **Phân biệt `postflight` với `brew trust`:** `brew trust --cask` là khái niệm **tin tưởng tap** của Homebrew, không liên quan Gatekeeper — nó không loại bỏ quarantine. Ngược lại, `postflight` bên trên xoá cờ **quarantine macOS** — và **không** đồng nghĩa với việc app được **notarize** hay được cấp **Accessibility / Input Monitoring**. Người dùng vẫn phải tự cấp hai quyền đó trong *System Settings → Privacy & Security*.
+> ⚠️ **Phân biệt `postflight` với `brew trust`:** `brew trust --cask` là khái niệm **tin tưởng tap** của Homebrew, không liên quan Gatekeeper — nó không loại bỏ quarantine. Ngược lại, `postflight` bên trên xoá cờ **quarantine macOS** — và **không** đồng nghĩa với việc app được **notarize** hay được cấp **Accessibility / Post Event**. Người dùng vẫn phải tự cấp hai quyền đó trong *System Settings → Privacy & Security*.
 
 ## Ad-hoc & chưa notarize
 
@@ -215,18 +215,17 @@ open Dau.app
 
 - Notarization (P4) sẽ cần `--sign` + `notarytool` — xem `scripts/build/macos.sh` (`--sign`, `--notarize`) và `platforms/macos/README.md`.
 
-> **Lưu ý:** xoá quarantine (dù qua `postflight` hay `xattr` thủ công) **không** làm app trở thành đã notarize và **không** cấp **Accessibility / Input Monitoring** — hai quyền đó phải do người dùng bật thủ công (mục dưới).
+> **Lưu ý:** xoá quarantine (dù qua `postflight` hay `xattr` thủ công) **không** làm app trở thành đã notarize và **không** cấp **Accessibility** — quyền đó phải do người dùng bật thủ công (mục dưới).
 
 ## Quyền macOS (bắt buộc khi chạy)
 
-Hai cổng TCC riêng:
+Quyền TCC cần bật:
 
 | API | Quyền | Mục đích |
 |-----|-------|----------|
 | `AXIsProcessTrusted` | **Accessibility** | Bắt phím / event tap |
-| `CGPreflightPostEventAccess` | **Input Monitoring** (post-event) | Gửi/tổng hợp sự kiện, inject chữ |
 
-Cách cấp: **System Settings → Privacy & Security → Accessibility / Input Monitoring** → bật **Dấu** (Dau). Sau mỗi lần rebuild ad-hoc / đổi path, macOS có thể coi binary là app khác → phải bỏ rồi thêm lại. Chi tiết: `platforms/macos/README.md`.
+Cách cấp: **System Settings → Privacy & Security → Accessibility** → bật đúng bản **Dấu** đang chạy. Với bản ad-hoc, sau mỗi lần rebuild / đổi path, macOS có thể coi binary là app khác → phải bỏ rồi thêm lại. Việc inject được kiểm tra bằng kết quả gửi sự kiện thật; nếu hệ thống từ chối, Dấu fail-open và cho phím gốc đi qua. Chi tiết: `platforms/macos/README.md`.
 
 ## Troubleshoot nhanh
 

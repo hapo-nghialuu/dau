@@ -13,8 +13,6 @@ final class OnboardingController: NSObject {
         case needsPermission
         /// AX trusted and keyboard listener running.
         case ready
-        /// AX trusted, but synthetic post-event access is missing.
-        case needsPostEventPermission
         /// AX trusted but listener failed to start — actionable retry.
         case setupFailed
     }
@@ -97,8 +95,6 @@ final class OnboardingController: NSObject {
         switch state.onboardingPhase {
         case .needsAccessibility:
             return .needsPermission
-        case .needsPostEventAccess:
-            return .needsPostEventPermission
         case .ready:
             return .ready
         case .setupFailed:
@@ -116,7 +112,7 @@ final class OnboardingController: NSObject {
             return NSSize(width: 460, height: 300)
         case .ready:
             return NSSize(width: 460, height: 280)
-        case .needsPostEventPermission, .setupFailed:
+        case .setupFailed:
             return NSSize(width: 460, height: 380)
         }
     }
@@ -306,35 +302,6 @@ final class OnboardingController: NSObject {
             window?.title = "Dấu — Sẵn sàng"
             scheduleReadyCloseIfNeeded()
 
-        case .needsPostEventPermission:
-            readyCloseWorkItem?.cancel()
-            readyCloseWorkItem = nil
-            titleLabel?.stringValue = "Cần thêm quyền để gõ"
-            // After an explicit request, OS often will not re-show a dialog — guide recovery.
-            let alreadyAsked = SyntheticPostAccess.didRequestThisProcess
-            if alreadyAsked {
-                bodyLabel?.stringValue =
-                    "Vẫn thiếu quyền gửi sự kiện (cổng TCC riêng với Trợ năng). "
-                    + "Nếu không thấy hộp thoại: System Settings → Privacy & Security → Accessibility "
-                    + "→ xóa Dấu khỏi danh sách, thoát app, thêm lại và bật. "
-                    + "Build ad-hoc / đổi chữ ký sau mỗi lần rebuild thường phải làm lại bước này."
-                statusLabel?.stringValue = "Vẫn thiếu quyền gửi sự kiện — xem hướng dẫn phía trên."
-                primaryButton?.title = "Thử lại quyền…"
-            } else {
-                bodyLabel?.stringValue =
-                    "Dấu đã có quyền Trợ năng và đang theo dõi bàn phím, nhưng cần quyền gửi sự kiện "
-                    + "để thay thế chữ đang gõ. Bấm Cấp quyền để tiếp tục."
-                statusLabel?.stringValue = "Thiếu quyền gửi sự kiện — chưa sẵn sàng."
-                primaryButton?.title = "Cấp quyền…"
-            }
-            statusLabel?.textColor = .systemOrange
-            primaryButton?.isHidden = false
-            primaryButton?.isEnabled = true
-            secondaryButton?.title = "Mở Cài đặt hệ thống…"
-            secondaryButton?.isHidden = false
-            secondaryButton?.isEnabled = true
-            window?.title = "Dấu — Cần quyền gửi sự kiện"
-
         case .setupFailed:
             readyCloseWorkItem?.cancel()
             readyCloseWorkItem = nil
@@ -376,10 +343,6 @@ final class OnboardingController: NSObject {
             // Valid AX prompt path (does not write TCC DB).
             onRequestAccessibilityPrompt?()
             refreshStatus()
-        case .needsPostEventPermission:
-            // Reuse the existing setup path; it prompts for post-event access too.
-            onRequestAccessibilityPrompt?()
-            refreshStatus()
         case .ready:
             close()
         case .setupFailed:
@@ -390,7 +353,7 @@ final class OnboardingController: NSObject {
 
     @objc private func handleSecondary() {
         switch currentPhase() {
-        case .needsPermission, .needsPostEventPermission, .setupFailed:
+        case .needsPermission, .setupFailed:
             onOpenSystemSettings?()
         case .ready:
             break
