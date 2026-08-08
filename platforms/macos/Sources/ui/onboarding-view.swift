@@ -200,18 +200,32 @@ struct OnboardingView: View {
     }
 
     private func openSettings() {
-        // Force-register the running binary's ad-hoc hash with TCC before opening
-        // System Settings. Without this, the toggle in Accessibility shows the OLD
-        // binary's entry — the new binary is never registered and AXIsProcessTrusted()
-        // stays false regardless of what the user toggles.
-        AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
-        let urls = [
-            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
-        ]
-        for s in urls {
-            if let url = URL(string: s), NSWorkspace.shared.open(url) { return }
+        // Reset stale TCC entries for this bundle ID. When upgrading an ad-hoc binary,
+        // the old binary's entry stays "ON" in System Settings. macOS sees an approved
+        // entry already exists and does not create a new one for the new binary hash —
+        // so AXIsProcessTrusted() stays false no matter how many times the user toggles.
+        // tccutil reset clears all entries for our bundle, then prompt:true registers
+        // the currently-running binary's hash as a fresh entry the user can approve.
+        if let bundleId = Bundle.main.bundleIdentifier {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            task.arguments = ["reset", "Accessibility", bundleId]
+            try? task.run()
+            task.waitUntilExit()
         }
+        // Prompt registers the current binary with TCC (shows system notification on macOS 13+).
+        AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+        // Open Settings after a brief delay so the new entry appears before user sees the list.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            let urls = [
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+                "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
+            ]
+            for s in urls {
+                if let url = URL(string: s), NSWorkspace.shared.open(url) { return }
+            }
+        }
+    }
     }
 
     private func restart() {
