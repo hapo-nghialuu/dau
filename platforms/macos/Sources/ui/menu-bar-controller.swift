@@ -109,7 +109,7 @@ final class MenuBarController: NSObject {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        // Header: logo + "Dấu" + method/shortcut + ON/OFF switch (Gõ Nhanh layout pattern).
+        // Header: logo + "Dấu" + method/shortcut + ON/OFF switch (GoNhanh layout).
         let header = NSMenuItem()
         header.view = MenuHeaderView(
             subtitle: state.menuHeaderSubtitle,
@@ -118,135 +118,43 @@ final class MenuBarController: NSObject {
             toggleAction: #selector(handleToggleTyping)
         )
         menu.addItem(header)
-
-        // Title carries shortcut for discoverability. Global fire is Carbon only
-        // (avoid NSMenuItem keyEquivalent + RegisterEventHotKey double-toggle).
-        let hotkey = state.toggleHotkey
-        let toggleItem = NSMenuItem(
-            title: "Bật/Tắt tiếng Việt (\(hotkey.displayString))",
-            action: #selector(handleToggleTyping),
-            keyEquivalent: ""
-        )
-        toggleItem.target = self
-        toggleItem.isHidden = true
-        menu.addItem(toggleItem)
-
         menu.addItem(.separator())
 
-        let telex = NSMenuItem(
-            title: "Telex",
-            action: #selector(handleTelex),
-            keyEquivalent: ""
-        )
+        let telex = NSMenuItem(title: "Telex", action: #selector(handleTelex), keyEquivalent: "")
         telex.target = self
         telex.state = state.engineMethod == .telex ? .on : .off
         menu.addItem(telex)
 
-        let vni = NSMenuItem(
-            title: "VNI",
-            action: #selector(handleVNI),
-            keyEquivalent: ""
-        )
+        let vni = NSMenuItem(title: "VNI", action: #selector(handleVNI), keyEquivalent: "")
         vni.target = self
         vni.state = state.engineMethod == .vni ? .on : .off
         menu.addItem(vni)
 
         menu.addItem(.separator())
 
-        let axItem = NSMenuItem(
-            title: state.accessibilityMenuLabel,
-            action: #selector(handleAccessibility),
-            keyEquivalent: ""
-        )
-        axItem.target = self
-        menu.addItem(axItem)
-
-        if state.inputSourceBlocked {
-            let blocked = NSMenuItem(
-                title: "Tạm tắt theo nguồn bàn phím (IME)",
-                action: nil,
-                keyEquivalent: ""
-            )
-            blocked.isEnabled = false
-            menu.addItem(blocked)
-        }
-
-        let restart = NSMenuItem(
-            title: "Khởi động lại bộ gõ",
-            action: #selector(handleRestartTap),
-            keyEquivalent: ""
-        )
-        restart.target = self
-        menu.addItem(restart)
-
-        // SET-06: real settings window (not onboarding).
-        let settings = NSMenuItem(
-            title: "Cài đặt…",
-            action: #selector(handleSettings),
-            keyEquivalent: ","
-        )
+        let settings = NSMenuItem(title: "Cài đặt…", action: #selector(handleSettings), keyEquivalent: ",")
         settings.keyEquivalentModifierMask = [.command]
         settings.target = self
         menu.addItem(settings)
 
-        // Keep recovery path for Accessibility guide when setup is incomplete.
-        if !state.isReadyToType {
-            let setup = NSMenuItem(
-                title: "Thiết lập quyền…",
-                action: #selector(handleOnboarding),
-                keyEquivalent: ""
-            )
-            setup.target = self
-            menu.addItem(setup)
-        }
+        let about = NSMenuItem(title: "Giới thiệu", action: #selector(handleAbout), keyEquivalent: "")
+        about.target = self
+        menu.addItem(about)
 
-        menu.addItem(.separator())
-
-        // UPDATE-01: compact update row + manual check. Only when a newer
-        // release is known (silent otherwise — no noise on failure).
-        if state.updateAvailable {
-            let update = NSMenuItem(
-                title: state.updateNotice ?? "Có bản mới",
-                action: #selector(handleOpenLatestRelease),
-                keyEquivalent: ""
-            )
-            update.target = self
-            menu.addItem(update)
-
-            // Homebrew guide (UPDATE-01) shown beside the GitHub release row.
-            let guide = NSMenuItem(
-                title: "Cập nhật qua Homebrew",
-                action: #selector(handleOpenUpdateGuide),
-                keyEquivalent: ""
-            )
-            guide.target = self
-            menu.addItem(guide)
-
-            menu.addItem(.separator())
-        }
-        let check = NSMenuItem(
-            title: "Kiểm tra bản cập nhật…",
-            action: #selector(handleCheckForUpdates),
-            keyEquivalent: ""
-        )
+        // UPDATE-01: single dynamic row — title changes when update is available.
+        let updateTitle = state.updateAvailable
+            ? (state.updateNotice ?? "Có bản mới — xem trên GitHub")
+            : "Kiểm tra bản cập nhật…"
+        let updateAction = state.updateAvailable
+            ? #selector(handleOpenLatestRelease)
+            : #selector(handleCheckForUpdates)
+        let check = NSMenuItem(title: updateTitle, action: updateAction, keyEquivalent: "")
         check.target = self
         menu.addItem(check)
 
         menu.addItem(.separator())
 
-        let about = NSMenuItem(
-            title: "Giới thiệu",
-            action: #selector(handleAbout),
-            keyEquivalent: ""
-        )
-        about.target = self
-        menu.addItem(about)
-
-        let quit = NSMenuItem(
-            title: "Thoát Dấu",
-            action: #selector(handleQuit),
-            keyEquivalent: "q"
-        )
+        let quit = NSMenuItem(title: "Thoát Dấu", action: #selector(handleQuit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
 
@@ -309,18 +217,18 @@ private final class MenuHeaderView: NSView {
         target: AnyObject?,
         toggleAction: Selector
     ) {
-        super.init(frame: NSRect(x: 0, y: 0, width: 320, height: 56))
+        super.init(frame: NSRect(x: 0, y: 0, width: 320, height: 44))
 
         wantsLayer = true
 
         // Logo (AppLogo brand color).
         if let logo = NSImage(named: "AppLogo") {
             logo.isTemplate = false
-            logo.size = NSSize(width: 28, height: 28)
+            logo.size = NSSize(width: 32, height: 32)
             logoView.image = logo
         } else if let fallback = NSImage(named: "MenuBarActive") {
             fallback.isTemplate = false
-            fallback.size = NSSize(width: 28, height: 28)
+            fallback.size = NSSize(width: 32, height: 32)
             logoView.image = fallback
         }
         logoView.imageScaling = .scaleProportionallyUpOrDown
@@ -347,9 +255,6 @@ private final class MenuHeaderView: NSView {
         toggle.action = toggleAction
         toggle.setAccessibilityLabel("Bật hoặc tắt gõ tiếng Việt")
 
-        // Auto Layout pins the VI/EN switch flush to the right edge no matter what
-        // width NSMenu assigns to this header (menu width can exceed the initial
-        // 280pt frame, which frame-based right-alignment drifted on).
         for subview in [logoView, titleLabel, subtitleLabel, toggle] {
             subview.translatesAutoresizingMaskIntoConstraints = false
             addSubview(subview)
@@ -357,15 +262,16 @@ private final class MenuHeaderView: NSView {
         NSLayoutConstraint.activate([
             logoView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             logoView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            logoView.widthAnchor.constraint(equalToConstant: 28),
-            logoView.heightAnchor.constraint(equalToConstant: 28),
+            logoView.widthAnchor.constraint(equalToConstant: 32),
+            logoView.heightAnchor.constraint(equalToConstant: 32),
 
+            // Title on top, subtitle below — mirrors GoNhanh layout.
             titleLabel.leadingAnchor.constraint(equalTo: logoView.trailingAnchor, constant: 8),
-            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 9),
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 5),
             titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -8),
 
-            subtitleLabel.leadingAnchor.constraint(equalTo: logoView.trailingAnchor, constant: 8),
-            subtitleLabel.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -10),
+            subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 1),
             subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -8),
 
             toggle.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
