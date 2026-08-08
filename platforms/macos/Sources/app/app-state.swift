@@ -35,6 +35,13 @@ enum AppEngineMethod: String, Codable, CaseIterable, Sendable, Equatable {
         case .vni: return "VNI"
         }
     }
+
+    var description: String {
+        switch self {
+        case .telex: return "aw, ow, w, s, f, r, x, j"
+        case .vni: return "a8, o9, 1-5"
+        }
+    }
 }
 
 /// Semantic status-item visual state (MENU-02). Maps to template images in Assets.xcassets.
@@ -73,6 +80,10 @@ enum DauSettingsKey {
     static let launchAtLoginDesired = "dau.settings.launchAtLoginDesired"
     /// JSON-encoded `ToggleHotkey` for global VI/EN shortcut.
     static let toggleHotkey = "dau.settings.toggleHotkey"
+    /// Onboarding completion gate — mirrors GoNhanh `gonhanh.onboarding.completed`.
+    static let hasCompletedOnboarding = "dau.onboarding.completed"
+    /// Whether Accessibility was ever granted (survives relaunch for step 10 jump).
+    static let permissionGranted = "dau.permission.granted"
 }
 
 /// Shared observable state for menu bar + onboarding + settings. Thread: main queue for mutations.
@@ -103,6 +114,16 @@ final class AppState: ObservableObject {
     /// Last desired launch-at-login from settings UI (not SMAppService truth).
     @Published var launchAtLoginDesired: Bool {
         didSet { persistBool(launchAtLoginDesired, key: DauSettingsKey.launchAtLoginDesired) }
+    }
+
+    /// Whether the 5-step onboarding has been completed (VI/EN method chosen).
+    @Published var hasCompletedOnboarding: Bool {
+        didSet { persistBool(hasCompletedOnboarding, key: DauSettingsKey.hasCompletedOnboarding) }
+    }
+
+    /// Whether Accessibility was ever granted (for step 10 → Success jump after restart).
+    @Published var permissionGranted: Bool {
+        didSet { persistBool(permissionGranted, key: DauSettingsKey.permissionGranted) }
     }
 
     /// Real login-item status mirrored from `SMAppService` (not a UserDefaults flag).
@@ -209,8 +230,37 @@ final class AppState: ObservableObject {
             key: DauSettingsKey.launchAtLoginDesired,
             default: false
         )
+        hasCompletedOnboarding = Self.loadBool(
+            defaults,
+            key: DauSettingsKey.hasCompletedOnboarding,
+            default: false
+        )
+        permissionGranted = Self.loadBool(
+            defaults,
+            key: DauSettingsKey.permissionGranted,
+            default: false
+        )
         toggleHotkey = Self.loadToggleHotkey(defaults)
         suppressPersist = false
+    }
+
+    /// Register sane UserDefaults so `bool(forKey:)` returns product defaults before first write.
+    /// Call once at launch before reading state — mirrors GoNhanh `registerDefaultSettings`.
+    static func registerDefaultSettings(defaults: UserDefaults = .standard) {
+        defaults.register(defaults: [
+            DauSettingsKey.typingEnabled: true,
+            DauSettingsKey.engineMethod: AppEngineMethod.telex.rawValue,
+            DauSettingsKey.autoRestore: true,
+            DauSettingsKey.autoCapitalize: false,
+            DauSettingsKey.launchAtLoginDesired: false,
+            DauSettingsKey.hasCompletedOnboarding: false,
+            DauSettingsKey.permissionGranted: false,
+        ])
+    }
+
+    /// Convenience for onboarding finish — syncs to UserDefaults (and later to engine via AppDelegate).
+    func setMethod(_ method: AppEngineMethod) {
+        engineMethod = method
     }
 
     /// Bundle version string for About.

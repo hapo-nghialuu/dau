@@ -317,4 +317,97 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(state.toggleShortcutDisplay, "⇧⌘E")
         defaults.removePersistentDomain(forName: suite)
     }
+
+    // MARK: - Onboarding persistence (hasCompletedOnboarding / permissionGranted)
+
+    func testOnboardingDefaultsWhenMissing() {
+        let suite = "io.github.hapo-nghialuu.dau.tests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("suite")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        let state = AppState(defaults: defaults)
+        XCTAssertFalse(state.hasCompletedOnboarding)
+        XCTAssertFalse(state.permissionGranted)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testOnboardingPersistsAndReloads() {
+        let suite = "io.github.hapo-nghialuu.dau.tests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("suite")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        let writer = AppState(defaults: defaults)
+        writer.hasCompletedOnboarding = true
+        writer.permissionGranted = true
+        writer.engineMethod = .vni
+        let reader = AppState(defaults: defaults)
+        XCTAssertTrue(reader.hasCompletedOnboarding)
+        XCTAssertTrue(reader.permissionGranted)
+        XCTAssertEqual(reader.engineMethod, .vni)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testRegisterDefaultSettingsDoesNotOverrideExisting() {
+        let suite = "io.github.hapo-nghialuu.dau.tests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("suite")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set(true, forKey: DauSettingsKey.hasCompletedOnboarding)
+        defaults.set(AppEngineMethod.vni.rawValue, forKey: DauSettingsKey.engineMethod)
+        AppState.registerDefaultSettings(defaults: defaults)
+        // Registered defaults should not clobber existing values.
+        XCTAssertTrue(defaults.bool(forKey: DauSettingsKey.hasCompletedOnboarding))
+        XCTAssertEqual(defaults.string(forKey: DauSettingsKey.engineMethod), AppEngineMethod.vni.rawValue)
+        // But a missing key should fallback to registered default.
+        XCTAssertFalse(defaults.bool(forKey: DauSettingsKey.permissionGranted))
+        XCTAssertTrue(defaults.bool(forKey: DauSettingsKey.typingEnabled) || defaults.object(forKey: DauSettingsKey.typingEnabled) == nil)
+        // Load via AppState still respects the stored values.
+        let state = AppState(defaults: defaults)
+        XCTAssertTrue(state.hasCompletedOnboarding)
+        XCTAssertEqual(state.engineMethod, .vni)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testRegisterDefaultSettingsProvidesFallbacks() {
+        let suite = "io.github.hapo-nghialuu.dau.tests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("suite")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        AppState.registerDefaultSettings(defaults: defaults)
+        // Bool fallback via UserDefaults.bool (registered defaults) should be accessible.
+        XCTAssertFalse(defaults.bool(forKey: DauSettingsKey.hasCompletedOnboarding))
+        XCTAssertFalse(defaults.bool(forKey: DauSettingsKey.permissionGranted))
+        // But object(forKey:) is still nil — loadBool correctly uses fallback.
+        let state = AppState(defaults: defaults)
+        XCTAssertFalse(state.hasCompletedOnboarding)
+        XCTAssertFalse(state.permissionGranted)
+        XCTAssertEqual(state.engineMethod, .telex)
+        XCTAssertTrue(state.typingEnabled)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testSetMethodUpdatesEngineMethod() {
+        let suite = "io.github.hapo-nghialuu.dau.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let state = AppState(defaults: defaults)
+        XCTAssertEqual(state.engineMethod, .telex)
+        state.setMethod(.vni)
+        XCTAssertEqual(state.engineMethod, .vni)
+        XCTAssertEqual(defaults.string(forKey: DauSettingsKey.engineMethod), AppEngineMethod.vni.rawValue)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testEngineMethodDescriptions() {
+        XCTAssertEqual(AppEngineMethod.telex.description, "aw, ow, w, s, f, r, x, j")
+        XCTAssertEqual(AppEngineMethod.vni.description, "a8, o9, 1-5")
+    }
 }

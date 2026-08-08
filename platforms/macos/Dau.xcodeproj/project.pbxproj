@@ -636,7 +636,7 @@
 					"$(PROJECT_DIR)/build/lib",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.1.5;
+				MARKETING_VERSION = 0.1.6;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
@@ -690,7 +690,7 @@
 					"$(PROJECT_DIR)/build/lib",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.1.5;
+				MARKETING_VERSION = 0.1.6;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
@@ -738,7 +738,7 @@
 					"$(PROJECT_DIR)/build/lib",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.1.5;
+				MARKETING_VERSION = 0.1.6;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
@@ -786,7 +786,7 @@
 					"$(PROJECT_DIR)/build/lib",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 0.1.5;
+				MARKETING_VERSION = 0.1.6;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",

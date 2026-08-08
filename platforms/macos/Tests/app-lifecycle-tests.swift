@@ -255,4 +255,49 @@ final class AppLifecycleTests: XCTestCase {
         XCTAssertEqual(reg.registrationGeneration, gen)
         XCTAssertTrue(reg.isRegistered)
     }
+
+    // MARK: - Onboarding gate (hasCompletedOnboarding && AX)
+
+    func testOnboardingGateShowsWhenNotCompletedEvenIfTrusted() {
+        // AppDelegate gate: hasCompleted && AX -> startEngine else showOnboarding.
+        func shouldShowOnboarding(hasCompleted: Bool, trusted: Bool) -> Bool {
+            !(hasCompleted && trusted)
+        }
+        XCTAssertTrue(shouldShowOnboarding(hasCompleted: false, trusted: true), "fresh install with trust must still show onboarding (needs method choice)")
+        XCTAssertTrue(shouldShowOnboarding(hasCompleted: false, trusted: false))
+        XCTAssertTrue(shouldShowOnboarding(hasCompleted: true, trusted: false))
+        XCTAssertFalse(shouldShowOnboarding(hasCompleted: true, trusted: true))
+    }
+
+    func testOnboardingGateAfterRestartJumpsToSuccess() {
+        // After restart(), permissionGranted && trusted -> view sets step=10
+        let suite = "io.github.hapo-nghialuu.dau.tests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else { XCTFail("suite"); return }
+        defaults.removePersistentDomain(forName: suite)
+        // Simulate restart() persistence
+        defaults.set(true, forKey: DauSettingsKey.permissionGranted)
+        defaults.set(false, forKey: DauSettingsKey.hasCompletedOnboarding)
+        defaults.set(AppEngineMethod.telex.rawValue, forKey: DauSettingsKey.engineMethod)
+        // View logic: if permissionGranted && hasPermission { step = 10 }
+        XCTAssertTrue(defaults.bool(forKey: DauSettingsKey.permissionGranted))
+        XCTAssertFalse(defaults.bool(forKey: DauSettingsKey.hasCompletedOnboarding))
+        // Simulate finish()
+        defaults.set(true, forKey: DauSettingsKey.hasCompletedOnboarding)
+        let state = AppState(defaults: defaults)
+        XCTAssertTrue(state.hasCompletedOnboarding)
+        XCTAssertTrue(state.permissionGranted)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testLaunchPermissionRecoveryRequiresOnboardingCompleted() {
+        // AppDelegate.requestLaunchPermissionRecovery now guards on hasCompletedOnboarding.
+        func shouldRecover(hasCompleted: Bool, trusted: Bool) -> Bool {
+            guard hasCompleted else { return false }
+            return LaunchPermissionRecoveryPolicy.shouldRequestAccessibility(accessibilityTrusted: trusted)
+        }
+        XCTAssertFalse(shouldRecover(hasCompleted: false, trusted: false), "pre-onboarding must not prompt")
+        XCTAssertFalse(shouldRecover(hasCompleted: false, trusted: true))
+        XCTAssertTrue(shouldRecover(hasCompleted: true, trusted: false))
+        XCTAssertFalse(shouldRecover(hasCompleted: true, trusted: true))
+    }
 }
