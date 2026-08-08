@@ -32,3 +32,4 @@ platforms/macos/build/
 **/DerivedData/
 *.xcuserstate
 xcuserdata/
+default.profraw
