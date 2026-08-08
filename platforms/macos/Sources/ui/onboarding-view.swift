@@ -128,7 +128,12 @@ struct OnboardingView: View {
             selectedMode = appState.engineMethod
             hasPermission = KeyboardEventTap.isAccessibilityTrusted(prompt: false)
             if UserDefaults.standard.bool(forKey: DauSettingsKey.permissionGranted), hasPermission {
+                // Already granted before and still trusted → jump to Success.
                 step = 10
+            } else if UserDefaults.standard.bool(forKey: DauSettingsKey.permissionGranted), !hasPermission {
+                // Returning user (previously granted) but AX lost trust (e.g. after upgrade).
+                // Skip Welcome and go straight to Permission step — no need to re-explain the app.
+                step = 1
             }
         }
         .onReceive(timer) { _ in
