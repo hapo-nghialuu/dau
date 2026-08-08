@@ -200,6 +200,11 @@ struct OnboardingView: View {
     }
 
     private func openSettings() {
+        // Force-register the running binary's ad-hoc hash with TCC before opening
+        // System Settings. Without this, the toggle in Accessibility shows the OLD
+        // binary's entry — the new binary is never registered and AXIsProcessTrusted()
+        // stays false regardless of what the user toggles.
+        AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
         let urls = [
             "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
             "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
