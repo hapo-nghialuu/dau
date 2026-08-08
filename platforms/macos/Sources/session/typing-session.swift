@@ -66,7 +66,7 @@ enum TypingCallbackDurationBucket: String, Equatable, Sendable {
 final class TypingSession {
     static let queueLabel = "dau.typing"
     /// Default EventTap wait budget for map + zero-delay inject (prefer pass over hang).
-    static let defaultCallbackBudgetNanoseconds: UInt64 = 12_000_000 // 12 ms
+    static let defaultCallbackBudgetNanoseconds: UInt64 = 100_000_000 // 100 ms — match GoNhanh blocking (was 12 ms TG-00, too tight for first CGEventPost ~10-14ms)
 
     private let queue: DispatchQueue
     private let pipeline: MacKeyPipeline
