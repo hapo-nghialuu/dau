@@ -241,6 +241,7 @@ publish() {
     --notes "macOS build Dau-$VERSION.zip (ad-hoc, no notarization)."
 
   update_cask_sha
+  update_tap
 }
 
 update_cask_sha() {
@@ -253,6 +254,15 @@ update_cask_sha() {
   if [[ -f "$cask" ]]; then
     sed -i '' -E "s/sha256 \"[0-9a-fA-F]{64}\"/sha256 \"$sha\"/" "$cask"
   fi
+}
+
+update_tap() {
+  local sha file
+  file="$RELEASE_DIR/Dau-$VERSION.zip.sha256"
+  [[ -f "$file" ]] || err "sha256 file missing: $file"
+  sha="$(awk '{print $1}' "$file")"
+  info "Updating homebrew-tap to v$VERSION"
+  run "$ROOT/scripts/update-tap.sh" "$VERSION" "$sha"
 }
 
 # --- flags -----------------------------------------------------------------
