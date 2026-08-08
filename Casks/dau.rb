@@ -1,6 +1,6 @@
 cask "dau" do
   version "0.1.14"
-  sha256 "4ac9c2d59c152f078b357c6c1ad4b8ccb6013b8695d957483826ea891277e5f5"
+  sha256 "448c226d275cde7b81cc39b3d26cf0c3fb8d19365142409e15ae29c08d0a144a"
 
   url "https://github.com/hapo-nghialuu/dau/releases/download/v#{version}/Dau-#{version}.zip"
   name "Dấu"
